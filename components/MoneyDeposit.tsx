@@ -1,16 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Send, CheckCircle2, Loader2, Receipt, User, Phone, DollarSign } from 'lucide-react';
+import { Send, CheckCircle2, Loader2, Receipt, User, Phone, DollarSign, Calendar, Building2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAppContext } from '../AppContext';
 
 // আপনার ব্যাকএন্ড URL (Render)
 const BACKEND_URL = (import.meta as any).env?.VITE_MARKETING_BACKEND_URL || 'https://whatsapp-0954.onrender.com';
 
 export const MoneyDeposit: React.FC = () => {
-  const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
+  // AppContext থেকে প্রজেক্ট, ক্লায়েন্ট, ট্রানজেকশন এবং addTransaction নিয়ে আসা হচ্ছে
+  const { projects, clients, transactions, addTransaction } = useAppContext();
+  
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState('');
   const [amount, setAmount] = useState('');
+  const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -18,43 +23,87 @@ export const MoneyDeposit: React.FC = () => {
   // এই রেফারেন্সটি রিসিটের ডিজাইনকে সিলেক্ট করবে
   const receiptRef = useRef<HTMLDivElement>(null);
 
+  // ১. সিলেক্ট করা প্রজেক্টের ডাটা বের করা
+  const selectedProject = useMemo(() => {
+    return projects.find(p => p.id === selectedProjectId) || null;
+  }, [projects, selectedProjectId]);
+
+  // ২. সিলেক্ট করা ক্লায়েন্টের সম্পূর্ণ ডাটা বের করা
+  const selectedClient = useMemo(() => {
+    return clients.find(c => c.id === selectedClientId) || null;
+  }, [clients, selectedClientId]);
+
+  // ৩. নির্দিষ্ট প্রজেক্টে নির্দিষ্ট ক্লায়েন্টের আগের সর্বমোট জমার হিসাব বের করা
+  const previousTotal = useMemo(() => {
+    if (!selectedClientId || !selectedProjectId) return 0;
+    return transactions
+      .filter(t => t.clientId === selectedClientId && t.projectId === selectedProjectId && t.type === 'deposit')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  }, [transactions, selectedClientId, selectedProjectId]);
+
+  // ৪. রিয়েল-টাইম টোটাল ক্যালকুলেশন
+  const newDepositAmount = Number(amount) || 0;
+  const grandTotal = previousTotal + newDepositAmount;
+
+  // তারিখ ফরম্যাট করার ফাংশন
+  const formattedDate = new Date(depositDate).toLocaleDateString('en-GB');
+
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName || !clientPhone || !amount) return alert('অনুগ্রহ করে সব তথ্য পূরণ করুন');
+    if (!selectedProject) {
+      return alert('অনুগ্রহ করে প্রথমে প্রজেক্ট সিলেক্ট করুন!');
+    }
+    if (!selectedClient || !amount) {
+      return alert('অনুগ্রহ করে ক্লায়েন্ট সিলেক্ট করুন এবং টাকার পরিমাণ দিন!');
+    }
+    if (!selectedClient.phone) {
+      return alert('এই ক্লায়েন্টের কোনো হোয়াটসঅ্যাপ নম্বর সেভ করা নেই। দয়া করে Admin Panel থেকে নম্বর আপডেট করুন।');
+    }
     
     setIsProcessing(true);
     setSuccessMsg('');
 
     try {
-      // ১. ডাটাবেসে সেভ করার লজিক (আপনার ডাটাবেস অনুযায়ী এখানে কোড বসাবেন)
-      // await saveToSupabaseOrFirebase({ clientName, clientPhone, amount });
-      
-      const transactionId = "TRX-" + Math.floor(100000 + Math.random() * 900000); // একটি ডামি ট্রানজেকশন আইডি
-      const date = new Date().toLocaleDateString('en-GB');
+      // ১. ডাটাবেস/Ledger-এ ট্রানজেকশন সেভ করা
+      await addTransaction({
+        id: `t_${Date.now()}`,
+        projectId: selectedProject.id, 
+        date: depositDate,
+        description: `Deposit from ${selectedClient.name}`,
+        amount: newDepositAmount,
+        categoryId: 'cat1', // Deposit ক্যাটাগরির আইডি (আপনার constants.tsx অনুযায়ী)
+        accountId: 'BANK' as any,
+        clientId: selectedClient.id,
+        type: 'deposit',
+        auditUser: 'System',
+        createdByUserId: 'system'
+      } as any);
 
-      // ২. রিসিট PDF তৈরি করা (html2canvas & jsPDF)
+      // ২. পিডিএফ রিসিটের জন্য ট্রানজেকশন আইডি
+      const transactionId = "TRX-" + Math.floor(100000 + Math.random() * 900000);
+
+      // ৩. PDF রিসিট তৈরি করা (html2canvas & jsPDF)
       const receiptElement = receiptRef.current;
       if (!receiptElement) throw new Error("Receipt element not found");
 
-      // রিসিটের ছবি তোলা
       const canvas = await html2canvas(receiptElement, { scale: 2, backgroundColor: '#ffffff' });
       const imgData = canvas.toDataURL('image/png');
       
-      const pdf = new jsPDF('p', 'mm', 'a5'); // A5 সাইজের পিডিএফ (রিসিটের জন্য ভালো)
+      const pdf = new jsPDF('p', 'mm', 'a5'); // A5 সাইজের পিডিএফ
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       const pdfBase64 = pdf.output('datauristring'); // Base64 ডাটা
 
-      // ৩. WhatsApp-এ পাঠানো
-      const message = `সম্মানিত ${clientName},\n\nআপনার ${amount} টাকা সফলভাবে জমা হয়েছে। আপনার ডিজিটাল মানি রিসিটটি এই মেসেজের সাথে সংযুক্ত করা হলো।\n\nট্রানজেকশন আইডি: ${transactionId}\n\n------------------------\n🟢 *Building Developments & Technologies*\n_Smart Software. Smart Business. Smart Growth._`;
+      // ৪. WhatsApp-এ মেসেজ পাঠানো
+      const message = `সম্মানিত ${selectedClient.name},\n\n*${selectedProject.name}* প্রজেক্টের জন্য আপনার নতুন জমা: ${newDepositAmount.toLocaleString()} টাকা সফলভাবে গ্রহণ করা হয়েছে (তারিখ: ${formattedDate})।\nএই প্রজেক্টে আপনার এ পর্যন্ত সর্বমোট জমা: ${grandTotal.toLocaleString()} টাকা।\n\nআপনার ডিজিটাল মানি রিসিটটি এই মেসেজের সাথে সংযুক্ত করা হলো।\n\nট্রানজেকশন আইডি: ${transactionId}\n\n------------------------\n🟢 *Building Developments & Technologies*\n_Smart Software. Smart Business. Smart Growth._`;
 
       const response = await fetch(`${BACKEND_URL}/api/marketing/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recipients: [clientPhone],
+          recipients: [selectedClient.phone],
           message: message,
           mediaList: [
             {
@@ -68,12 +117,13 @@ export const MoneyDeposit: React.FC = () => {
 
       if (!response.ok) throw new Error('WhatsApp message failed to send');
 
-      setSuccessMsg('সফল! টাকা জমা হয়েছে এবং WhatsApp-এ PDF রিসিট পাঠানো হয়েছে।');
+      setSuccessMsg('সফল! টাকা Ledger-এ সেভ হয়েছে এবং WhatsApp-এ রিসিট পাঠানো হয়েছে।');
       
-      // ফর্ম ক্লিয়ার করা
-      setClientName('');
-      setClientPhone('');
+      // ৫. ফর্ম ক্লিয়ার করা
+      setSelectedClientId('');
       setAmount('');
+      setDepositDate(new Date().toISOString().split('T')[0]);
+      // প্রজেক্ট সিলেক্ট করাই থাকতে পারে, যদি ইউজার একই প্রজেক্টে আরও এন্ট্রি করতে চায়। চাইলে এটিও রিসেট করতে পারেন: setSelectedProjectId('');
 
     } catch (error) {
       console.error(error);
@@ -90,7 +140,7 @@ export const MoneyDeposit: React.FC = () => {
       <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-xl">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-3 bg-emerald-500/10 rounded-xl"><DollarSign className="text-emerald-400" size={24} /></div>
-          <h2 className="text-2xl font-bold text-white font-outfit">Deposit Money</h2>
+          <h2 className="text-2xl font-bold text-white font-outfit">Deposit & Receipt</h2>
         </div>
 
         {successMsg && (
@@ -101,39 +151,115 @@ export const MoneyDeposit: React.FC = () => {
         )}
 
         <form onSubmit={handleDeposit} className="space-y-5">
+          {/* প্রজেক্ট সিলেক্ট করার অপশন (নতুন যুক্ত করা হয়েছে) */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Name</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Project</label>
+            <div className="relative">
+              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <select 
+                value={selectedProjectId} 
+                onChange={e => {
+                  setSelectedProjectId(e.target.value);
+                  setSelectedClientId(''); // প্রজেক্ট চেঞ্জ করলে ক্লায়েন্ট রিসেট হবে
+                }} 
+                required 
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none"
+              >
+                <option value="" disabled>-- প্রজেক্ট নির্বাচন করুন --</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* তারিখ সিলেক্ট করার অপশন */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Deposit Date</label>
+            <div className="relative">
+              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input 
+                type="date" 
+                value={depositDate} 
+                onChange={e => setDepositDate(e.target.value)} 
+                required 
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* ক্লায়েন্ট ড্রপডাউন */}
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Client</label>
+              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">From Registry</span>
+            </div>
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} required placeholder="Enter client name" className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              <select 
+                value={selectedClientId} 
+                onChange={e => setSelectedClientId(e.target.value)} 
+                required 
+                disabled={!selectedProjectId} // প্রজেক্ট সিলেক্ট না করলে ক্লায়েন্ট সিলেক্ট করা যাবে না
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none disabled:opacity-50"
+              >
+                <option value="" disabled>-- ক্লায়েন্ট নির্বাচন করুন --</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
+          {/* অটোমেটিক হোয়াটসঅ্যাপ নম্বর */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp Number</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp Number (Auto-filled)</label>
             <div className="relative">
               <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input type="text" value={clientPhone} onChange={e => setClientPhone(e.target.value)} required placeholder="e.g. 017XXXXXXXX" className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              <input 
+                type="text" 
+                value={selectedClient?.phone || ''} 
+                readOnly 
+                placeholder="ক্লায়েন্ট সিলেক্ট করলে নম্বর আসবে" 
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-slate-400 text-sm outline-none cursor-not-allowed" 
+              />
             </div>
           </div>
 
+          {/* জমার পরিমাণ */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Deposit Amount (BDT)</label>
+            <div className="flex justify-between items-end">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Deposit Amount (BDT)</label>
+               {/* রিয়েল টাইম আগের জমার হিসাব (শুধুমাত্র এই প্রজেক্টের জন্য) */}
+               {selectedClient && selectedProject && (
+                 <span className="text-xs font-bold text-slate-400 bg-slate-900 px-3 py-1 rounded-lg border border-slate-700">
+                    Project Total: <span className="text-emerald-400">৳ {previousTotal.toLocaleString()}</span>
+                 </span>
+               )}
+            </div>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">৳</span>
-              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} required placeholder="0.00" className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              <input 
+                type="number" 
+                value={amount} 
+                onChange={e => setAmount(e.target.value)} 
+                required 
+                placeholder="0.00" 
+                disabled={!selectedClientId}
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-lg font-bold font-outfit focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50" 
+              />
             </div>
           </div>
 
-          <button type="submit" disabled={isProcessing} className={`w-full py-4 mt-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center space-x-3 shadow-xl ${isProcessing ? 'bg-slate-700 text-slate-500' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'}`}>
+          <button type="submit" disabled={isProcessing || !selectedClientId || !selectedProjectId} className={`w-full py-4 mt-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center space-x-3 shadow-xl ${isProcessing || !selectedClientId || !selectedProjectId ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'}`}>
             {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-            <span>{isProcessing ? 'Processing & Sending PDF...' : 'Save & Send WhatsApp Receipt'}</span>
+            <span>{isProcessing ? 'Processing & Sending PDF...' : 'Generate Receipt & Send WhatsApp'}</span>
           </button>
         </form>
       </motion.div>
 
       {/* ডান পাশ: মানি রিসিট প্রিভিউ (যাকে আমরা PDF বানাবো) */}
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col">
+      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col items-center lg:items-start">
         <div className="mb-4 flex items-center space-x-2 text-slate-400">
           <Receipt size={16} />
           <span className="text-xs font-bold uppercase tracking-widest">Live Receipt Preview</span>
@@ -144,8 +270,8 @@ export const MoneyDeposit: React.FC = () => {
         {/* ============================================== */}
         <div 
           ref={receiptRef} 
-          className="bg-white p-10 rounded-xl shadow-2xl relative overflow-hidden text-slate-900"
-          style={{ width: '400px', minHeight: '500px' }} // ফিক্সড সাইজ যাতে PDF ঠিকমতো আসে
+          className="bg-white p-10 rounded-xl shadow-2xl relative overflow-hidden text-slate-900 w-full"
+          style={{ maxWidth: '400px', minHeight: '520px' }}
         >
           {/* Watermark */}
           <div className="absolute inset-0 opacity-5 flex items-center justify-center pointer-events-none">
@@ -160,32 +286,46 @@ export const MoneyDeposit: React.FC = () => {
           </div>
 
           {/* Receipt Info */}
-          <div className="mb-8 relative z-10">
+          <div className="mb-6 relative z-10">
             <h3 className="text-xl font-black text-center mb-6 uppercase tracking-widest border border-slate-300 py-2 rounded-lg bg-slate-50">Money Receipt</h3>
             <div className="space-y-4 text-sm font-medium">
               <div className="flex justify-between border-b border-dashed border-slate-300 pb-2">
                 <span className="text-slate-500">Date:</span>
-                <span className="font-bold">{new Date().toLocaleDateString('en-GB')}</span>
+                <span className="font-bold">{formattedDate}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-300 pb-2">
+                <span className="text-slate-500">Project Name:</span>
+                <span className="font-bold text-emerald-700">{selectedProject?.name || '_______________'}</span>
               </div>
               <div className="flex justify-between border-b border-dashed border-slate-300 pb-2">
                 <span className="text-slate-500">Client Name:</span>
-                <span className="font-bold text-lg">{clientName || '_______________'}</span>
+                <span className="font-bold text-lg">{selectedClient?.name || '_______________'}</span>
               </div>
               <div className="flex justify-between border-b border-dashed border-slate-300 pb-2">
                 <span className="text-slate-500">Phone Number:</span>
-                <span className="font-bold">{clientPhone || '_______________'}</span>
+                <span className="font-bold">{selectedClient?.phone || '_______________'}</span>
               </div>
             </div>
           </div>
 
           {/* Amount Area */}
-          <div className="bg-emerald-50 rounded-xl p-6 text-center border border-emerald-100 relative z-10">
-            <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Amount Received</p>
-            <h2 className="text-4xl font-black text-slate-900">৳ {amount || '0.00'}</h2>
+          <div className="bg-emerald-50 rounded-xl p-6 border border-emerald-100 relative z-10 space-y-3">
+            <div className="flex justify-between text-xs text-emerald-700 font-bold border-b border-emerald-200 pb-2">
+               <span className="uppercase tracking-wider">Previous Deposit:</span>
+               <span>৳ {previousTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-xs text-emerald-700 font-bold border-b border-emerald-200 pb-2">
+               <span className="uppercase tracking-wider">New Deposit:</span>
+               <span>৳ {newDepositAmount.toLocaleString()}</span>
+            </div>
+            <div className="text-center pt-2">
+              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Grand Total Received</p>
+              <h2 className="text-3xl font-black text-slate-900">৳ {grandTotal.toLocaleString()}</h2>
+            </div>
           </div>
 
           {/* Signature */}
-          <div className="mt-16 flex justify-between items-end relative z-10">
+          <div className="mt-12 flex justify-between items-end relative z-10">
              <div className="text-center">
                 <div className="w-32 border-t-2 border-slate-800 mb-2"></div>
                 <p className="text-[10px] font-bold text-slate-500 uppercase">Client Signature</p>
