@@ -1,0 +1,324 @@
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useAppContext } from '../AppContext';
+import { 
+  Send, Users, Image as ImageIcon, QrCode, CheckCircle2, 
+  Loader2, Trash2, Smartphone, RefreshCw, Clock, Wifi, WifiOff, LogOut, Plus, ShieldCheck
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { io, Socket } from 'socket.io-client';
+
+const BACKEND_URL = (import.meta as any).env?.VITE_MARKETING_BACKEND_URL || 'https://whatsapp-0954.onrender.com';
+
+export const MarketingAutomation: React.FC = () => {
+  const { leads } = useAppContext();
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  const [message, setMessage] = useState('');
+  
+  // Multiple Files State
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
+  
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [backendOnline, setBackendOnline] = useState(false);
+  
+  const [isSending, setIsSending] = useState(false);
+  const [sendingProgress, setSendingProgress] = useState(0);
+  
+  const socketRef = useRef<Socket | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const updateQrState = (qr: string) => {
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+    setQrCode(qrUrl);
+    setIsConnecting(false);
+    setIsDisconnecting(false);
+  };
+
+  useEffect(() => {
+    const socket = io(BACKEND_URL);
+    socketRef.current = socket;
+
+    socket.on('connect', () => { setBackendOnline(true); fetchStatus(); });
+    socket.on('disconnect', () => { setBackendOnline(false); setIsConnected(false); });
+    socket.on('qr', (qr: string) => updateQrState(qr));
+    
+    socket.on('ready', () => {
+      setIsConnected(true); setQrCode(null); setIsConnecting(false); setIsDisconnecting(false);
+    });
+
+    socket.on('disconnected', () => {
+      setIsConnected(false); setQrCode(null); setIsConnecting(false); setIsDisconnecting(false);
+    });
+
+    return () => { socket.disconnect(); };
+  }, []);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/status`);
+      const data = await res.json();
+      
+      if (data.status === 'CONNECTED') {
+        setIsConnected(true); setIsConnecting(false); setQrCode(null);
+      } else if (data.status === 'QR_READY' && data.qr) {
+        updateQrState(data.qr);
+      } else {
+        setIsConnected(false); setIsConnecting(false); setQrCode(null);
+      }
+    } catch (e) { setBackendOnline(false); }
+  };
+
+  const toggleLead = (id: string) => setSelectedLeads(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  
+  const toggleAll = () => {
+    const filteredLeads = (leads || []).filter(l => l.phone && l.phone.trim().length >= 8);
+    if (selectedLeads.length === filteredLeads.length) setSelectedLeads([]);
+    else setSelectedLeads(filteredLeads.map(l => l.id));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      // "as File[]" যুক্ত করে টাইপস্ক্রিপ্টকে ফাইলের ধরন বুঝিয়ে দেওয়া হলো
+      const filesArray = Array.from(e.target.files) as File[];
+      setMediaFiles(prev => [...prev, ...filesArray]);
+      const previewsArray = filesArray.map((file: File) => URL.createObjectURL(file));
+      setMediaPreviews(prev => [...prev, ...previewsArray]);
+    }
+  };
+
+  const removeFile = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMediaFiles(prev => prev.filter((_, i) => i !== index));
+    setMediaPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+ const triggerConnection = async () => {
+    if (!backendOnline) return alert("Backend Node Offline.");
+    setIsConnecting(true); 
+    setQrCode(null);
+    
+    try {
+      await fetch(`${BACKEND_URL}/api/marketing/connect`, { method: 'POST' });
+      
+      // ১০ সেকেন্ড পর যদি QR না আসে, তবে লোডিং বন্ধ করে দেবে
+      setTimeout(() => {
+        if (!qrCode && !isConnected) {
+            setIsConnecting(false);
+            fetchStatus();
+        }
+      }, 10000);
+
+    } catch (err) { 
+      setIsConnecting(false); 
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!window.confirm("Disconnect WhatsApp session?")) return;
+    setIsDisconnecting(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/marketing/disconnect`, { method: 'POST' });
+      setIsConnected(false); setQrCode(null);
+    } catch (err) {} finally { setIsDisconnecting(false); fetchStatus(); }
+  };
+
+  const launchCampaign = async () => {
+    if (!isConnected) return alert("Link WhatsApp first.");
+    if (selectedLeads.length === 0) return alert("Select leads.");
+    
+    setIsSending(true);
+    setSendingProgress(0);
+
+    const filteredLeads = (leads || []).filter(l => l.phone && l.phone.trim().length >= 8);
+    const targetPhones = filteredLeads.filter(l => selectedLeads.includes(l.id)).map(l => l.phone);
+
+    // ==========================================
+    // অটোমেটিক ব্র্যান্ড সিগনেচার লজিক
+    // ==========================================
+    let finalMessage = message.trim();
+    if (finalMessage || mediaFiles.length > 0) {
+      const signature = `\n\n------------------------\n🟢 *Building Developments & Technologies*\n_Smart Real Estate. Smart Software. Smart Technologies._`;
+      // যদি ইউজার মেসেজ লিখে থাকে, তবে তার সাথে সিগনেচার যুক্ত হবে। আর শুধু ছবি পাঠালে ছবির ক্যাপশনে সিগনেচার যাবে।
+      finalMessage = finalMessage ? finalMessage + signature : signature.trim();
+    }
+
+    const mediaList = await Promise.all(mediaFiles.map(async (file) => {
+      const base64Data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      return {
+        data: base64Data,
+        mimetype: file.type,
+        filename: file.name
+      };
+    }));
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/marketing/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients: targetPhones,
+          message: finalMessage, // আপডেট করা মেসেজ পাঠানো হচ্ছে
+          mediaList 
+        })
+      });
+
+      if (!response.ok) throw new Error('Campaign failed to start');
+
+      const totalEstimatedSeconds = selectedLeads.length * 6;
+      let elapsed = 0;
+      const progressTimer = setInterval(() => {
+        elapsed += 1;
+        setSendingProgress(Math.min((elapsed / totalEstimatedSeconds) * 100, 99));
+        if (elapsed >= totalEstimatedSeconds) {
+          clearInterval(progressTimer); setSendingProgress(100);
+          setTimeout(() => { setIsSending(false); setSendingProgress(0); }, 1500);
+        }
+      }, 1000);
+
+    } catch (err) {
+      alert("Error: " + (err as Error).message);
+      setIsSending(false);
+    }
+  };
+
+  const filteredLeadsList = useMemo(() => (leads || []).filter(l => l.phone && l.phone.trim().length >= 8), [leads]);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-bold font-outfit text-white tracking-tight">Marketing Automation</h2>
+          <div className="flex items-center gap-3 mt-1">
+             <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-tighter ${backendOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+              {backendOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
+              {backendOnline ? 'Node Online' : 'Node Offline'}
+            </div>
+          </div>
+        </div>
+        
+        {!isConnected ? (
+          <button onClick={triggerConnection} disabled={isConnecting || isDisconnecting || !backendOnline} className={`flex items-center space-x-3 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl ${isConnecting || !backendOnline ? 'bg-slate-800 text-slate-500' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'}`}>
+            {isConnecting ? <Loader2 size={16} className="animate-spin" /> : <QrCode size={16} />}
+            <span>{isConnecting ? 'Generating QR...' : 'Link WhatsApp'}</span>
+          </button>
+        ) : (
+          <div className="flex items-center space-x-3">
+             <button onClick={fetchStatus} className="p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white"><RefreshCw size={16} /></button>
+             <button onClick={handleLogout} className="flex items-center space-x-2 bg-red-500/10 border border-red-500/20 px-6 py-4 rounded-2xl text-red-400 hover:bg-red-500/20 text-[10px] font-black uppercase"><LogOut size={14} /><span>Disconnect</span></button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* COMPOSER */}
+        <div className="lg:col-span-5 space-y-6">
+          <AnimatePresence mode="wait">
+            {qrCode ? (
+              <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[2.5rem] flex flex-col items-center justify-center text-center shadow-2xl">
+                 <img src={qrCode} alt="WhatsApp QR" className="w-64 h-64 mb-4" />
+                 <h4 className="text-slate-950 font-black uppercase">Scan QR Code</h4>
+                 <button onClick={() => setQrCode(null)} className="mt-4 text-slate-400 hover:text-slate-900 text-xs font-bold">Close</button>
+              </motion.div>
+            ) : (
+              <motion.div key="composer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl space-y-8">
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Message Body (Caption)</label>
+                  <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)} placeholder="Type your main message here..." className="w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 text-white text-sm focus:ring-4 focus:ring-amber-400/10 outline-none resize-none" />
+                  
+                  {/* UI Hint for Automatic Signature */}
+                  <div className="flex items-start space-x-2 mt-2 px-2">
+                    <ShieldCheck size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                    <p className="text-[10px] text-slate-400 leading-tight">
+                      A professional signature <span className="text-emerald-400 font-bold">(Building Developments & Technologies)</span> will be added automatically to the end of your message.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Media Attachments ({mediaFiles.length})</label>
+                     <button onClick={() => fileInputRef.current?.click()} className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:text-amber-300"><Plus size={12}/> Add More</button>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-3">
+                     {mediaPreviews.map((preview, index) => (
+                       <div key={index} className="aspect-square bg-slate-900 rounded-2xl relative overflow-hidden group border border-slate-700">
+                          {mediaFiles[index]?.type.startsWith('video/') ? (
+                             <video src={preview} className="w-full h-full object-cover" />
+                          ) : (
+                             <img src={preview} className="w-full h-full object-cover" />
+                          )}
+                          <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                             <button onClick={(e) => removeFile(index, e)} className="bg-red-500 p-2 rounded-xl text-white hover:scale-110"><Trash2 size={16} /></button>
+                          </div>
+                       </div>
+                     ))}
+                     
+                     <div onClick={() => fileInputRef.current?.click()} className="aspect-square bg-slate-900/50 border-2 border-dashed border-slate-700 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-amber-400 transition-all">
+                        <ImageIcon className="text-slate-600 mb-1" size={24} />
+                        <span className="text-[8px] text-slate-500 font-bold uppercase">Upload</span>
+                     </div>
+                  </div>
+                  
+                  <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+                </div>
+
+                <button onClick={launchCampaign} disabled={isSending || !isConnected || selectedLeads.length === 0 || (!message.trim() && mediaFiles.length === 0)} className={`w-full py-5 rounded-3xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center space-x-4 ${isSending || !isConnected || selectedLeads.length === 0 || (!message.trim() && mediaFiles.length === 0) ? 'bg-slate-700 text-slate-500' : 'bg-amber-400 text-slate-950 hover:bg-amber-300'}`}>
+                  {isSending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+                  <span>{isSending ? `Sending... ${Math.round(sendingProgress)}%` : `Launch to ${selectedLeads.length} Leads`}</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* RECIPIENTS */}
+        <div className="lg:col-span-7">
+          <div className="bg-slate-800 rounded-[2.5rem] border border-slate-700 shadow-2xl overflow-hidden flex flex-col h-[750px]">
+            <div className="p-8 border-b border-slate-700 bg-slate-900/50 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white font-outfit">Recipients</h3>
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{filteredLeadsList.length} Contacts</p>
+              </div>
+              <button onClick={toggleAll} className="bg-slate-900 border border-slate-800 px-6 py-3 rounded-xl text-[10px] font-black text-slate-300 uppercase hover:text-white transition-all">{selectedLeads.length === filteredLeadsList.length ? 'Clear' : 'Select All'}</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+               <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-10 bg-slate-800 border-b border-slate-700">
+                     <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        <th className="px-8 py-4 w-12 text-center">Sel</th>
+                        <th className="px-8 py-4">Name</th>
+                        <th className="px-8 py-4">Phone</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                     {filteredLeadsList.map((lead) => (
+                        <tr key={lead.id} onClick={() => toggleLead(lead.id)} className={`cursor-pointer transition-colors group ${selectedLeads.includes(lead.id) ? 'bg-amber-400/5' : 'hover:bg-slate-700/20'}`}>
+                           <td className="px-8 py-6 text-center">
+                              <div className={`mx-auto w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedLeads.includes(lead.id) ? 'bg-amber-400 border-amber-400 text-slate-950' : 'border-slate-700'}`}>
+                                 {selectedLeads.includes(lead.id) && <CheckCircle2 size={14} />}
+                              </div>
+                           </td>
+                           <td className="px-8 py-6 text-sm font-bold text-slate-300">{lead.name}</td>
+                           <td className="px-8 py-6 text-xs text-slate-500">{lead.phone}</td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
