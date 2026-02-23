@@ -33,6 +33,7 @@ export interface User {
   name: string;
   role: UserRole;
   assignedProjects: string[];
+  permissions?: string[];
 }
 
 export interface Project {

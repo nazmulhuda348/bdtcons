@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { UserRole, User, Project, Client } from '../types';
-import { Users, Briefcase, UserCircle, Plus, Trash2, Shield, X, Key, ShieldCheck, Lock, UserPlus, AlertTriangle, Edit2, Facebook } from 'lucide-react';
+import { Users, Briefcase, UserCircle, Plus, Trash2, Shield, X, Key, ShieldCheck, Lock, UserPlus, AlertTriangle, Edit2, Facebook, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// সিস্টেমে কী কী পারমিশন থাকবে তার লিস্ট
+export const AVAILABLE_PERMISSIONS = [
+  { id: 'view_dashboard', label: 'View Dashboard' },
+  { id: 'view_ledger', label: 'View Ledger' },
+  { id: 'edit_ledger', label: 'Add/Edit Ledger Data' },
+  { id: 'manage_leads', label: 'Manage Lead Pipeline' },
+  { id: 'marketing', label: 'Marketing Automation' },
+  { id: 'manage_clients', label: 'Manage Client Registry' }
+];
+
 export const AdminPanel: React.FC = () => {
-  // এখানে deleteUser, deleteProject, deleteClient যুক্ত করা হয়েছে
   const { users, projects, clients, updateUsers, updateProjects, updateClients, deleteUser, deleteProject, deleteClient } = useAppContext();
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'projects' | 'clients'>('users');
 
@@ -20,7 +29,7 @@ export const AdminPanel: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold font-outfit text-white">Administration Control</h2>
-          <p className="text-slate-500 mt-1">Manage infrastructure and access control</p>
+          <p className="text-slate-500 mt-1">Manage infrastructure, user access and custom permissions</p>
         </div>
       </div>
 
@@ -38,7 +47,6 @@ export const AdminPanel: React.FC = () => {
       </div>
 
       <div className="mt-6">
-        {/* Component গুলোতে delete ফাংশনগুলো পাঠানো হচ্ছে */}
         {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} deleteUserDb={deleteUser} />}
         {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} deleteProjectDb={deleteProject} />}
         {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} />}
@@ -49,10 +57,10 @@ export const AdminPanel: React.FC = () => {
 
 const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User[]) => User[])) => void, projects: Project[], deleteUserDb: (id: string) => Promise<void> }> = ({ users, setUsers, projects, deleteUserDb }) => {
   const [passwordModalUser, setPasswordModalUser] = useState<User | null>(null);
+  const [permissionsModalUser, setPermissionsModalUser] = useState<User | null>(null);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // ডাটাবেস থেকে ডিলিট করার ফাংশন
   const handleDeleteUser = async (id: string) => {
     try {
       await deleteUserDb(id);
@@ -87,11 +95,14 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
                   {user.name?.charAt(0) || '?'}
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button 
-                    onClick={() => setPasswordModalUser(user)}
-                    className="p-2 bg-slate-900 text-slate-400 hover:text-amber-400 rounded-xl transition-all"
-                    title="Change Password"
-                  >
+                  {/* Permissions Edit Button */}
+                  {user.role !== UserRole.ADMIN && (
+                    <button onClick={() => setPermissionsModalUser(user)} className="p-2 bg-slate-900 text-slate-400 hover:text-emerald-400 rounded-xl transition-all" title="Manage Permissions">
+                      <CheckSquare size={16} />
+                    </button>
+                  )}
+                  {/* Password Edit Button */}
+                  <button onClick={() => setPasswordModalUser(user)} className="p-2 bg-slate-900 text-slate-400 hover:text-amber-400 rounded-xl transition-all" title="Change Password">
                     <Key size={16} />
                   </button>
                   <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${user.role === UserRole.ADMIN ? 'bg-red-400/10 text-red-400' : 'bg-blue-400/10 text-blue-400'}`}>
@@ -102,19 +113,37 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
               <h4 className="text-white font-bold text-lg">{user.name || 'Unknown User'}</h4>
               <p className="text-slate-500 text-sm mb-4">@{user.username}</p>
               
-              {user.role === UserRole.GUEST && (
-                <div className="space-y-2 mb-6">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Assigned Projects</p>
-                  <div className="flex flex-wrap gap-2">
-                    {projects.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => toggleProjectAccess(user.id, p.id)}
-                        className={`text-[10px] px-2 py-1 rounded-md transition-all ${(user.assignedProjects || []).includes(p.id) ? 'bg-amber-400 text-slate-900 font-bold' : 'bg-slate-900 text-slate-500 hover:text-slate-300'}`}
-                      >
-                        {p.name}
-                      </button>
-                    ))}
+              {user.role !== UserRole.ADMIN && (
+                <div className="space-y-4 mb-6">
+                  {/* Shows selected permissions nicely */}
+                  <div className="space-y-2">
+                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Permissions</p>
+                     <div className="flex flex-wrap gap-1">
+                       {user.permissions && user.permissions.length > 0 ? (
+                          user.permissions.map(p => (
+                             <span key={p} className="text-[9px] bg-slate-900 border border-slate-700 text-slate-300 px-2 py-1 rounded uppercase tracking-wider">
+                               {AVAILABLE_PERMISSIONS.find(ap => ap.id === p)?.label || p}
+                             </span>
+                          ))
+                       ) : (
+                          <span className="text-xs text-slate-600 italic">No specific permissions</span>
+                       )}
+                     </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Assigned Projects</p>
+                    <div className="flex flex-wrap gap-2">
+                      {projects.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => toggleProjectAccess(user.id, p.id)}
+                          className={`text-[10px] px-2 py-1 rounded-md transition-all ${(user.assignedProjects || []).includes(p.id) ? 'bg-amber-400 text-slate-900 font-bold' : 'bg-slate-900 text-slate-500 hover:text-slate-300'}`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -148,29 +177,32 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
 
       <AnimatePresence>
         {passwordModalUser && (
-          <PasswordChangeModal 
-            user={passwordModalUser} 
-            onClose={() => setPasswordModalUser(null)} 
-            onSubmit={(id, pw) => setUsers(prev => prev.map(u => u.id === id ? { ...u, password: pw } : u))} 
-          />
+          <PasswordChangeModal user={passwordModalUser} onClose={() => setPasswordModalUser(null)} onSubmit={(id, pw) => setUsers(prev => prev.map(u => u.id === id ? { ...u, password: pw } : u))} />
         )}
         {showAddUserModal && (
-          <AddUserModal 
-            onClose={() => setShowAddUserModal(false)}
-            onSubmit={(nu) => setUsers(prev => [...prev, nu])}
-          />
+          <AddUserModal onClose={() => setShowAddUserModal(false)} onSubmit={(nu) => setUsers(prev => [...prev, nu])} />
+        )}
+        {permissionsModalUser && (
+          <PermissionsChangeModal user={permissionsModalUser} onClose={() => setPermissionsModalUser(null)} onSubmit={(id, perms) => setUsers(prev => prev.map(u => u.id === id ? { ...u, permissions: perms } : u))} />
         )}
       </AnimatePresence>
     </>
   );
 };
 
-// AddUserModal এবং PasswordChangeModal অপরিবর্তিত আছে
+// Add User Modal with Checkboxes
 const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => void }> = ({ onClose, onSubmit }) => {
   const [form, setForm] = useState({ username: '', name: '', password: '', role: UserRole.MANAGER });
+  // বাই ডিফল্ট শুধু ভিউ পারমিশন দেয়া থাকবে
+  const [selectedPerms, setSelectedPerms] = useState<string[]>(['view_dashboard', 'view_ledger']); 
+
+  const togglePerm = (id: string) => {
+    setSelectedPerms(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-3xl p-8 shadow-2xl">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-3xl p-8 shadow-2xl my-8">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center space-x-3">
              <div className="p-2 bg-amber-400/10 rounded-xl"><UserPlus className="text-amber-400" size={20} /></div>
@@ -178,16 +210,78 @@ const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => vo
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={24} /></button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); onSubmit({ id: Math.random().toString(36).substr(2, 9), ...form, assignedProjects: [] }); onClose(); }} className="space-y-4">
-          <input required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" placeholder="Display Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-          <input required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" placeholder="Username" value={form.username} onChange={e => setForm({...form, username: e.target.value.toLowerCase()})} />
-          <input required type="password" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" placeholder="Initial Password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
-          <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" value={form.role} onChange={e => setForm({...form, role: e.target.value as UserRole})}>
-            <option value={UserRole.MANAGER}>Manager</option>
-            <option value={UserRole.GUEST}>Guest</option>
-          </select>
-          <button type="submit" className="w-full py-4 bg-amber-400 text-slate-900 font-bold rounded-2xl hover:bg-amber-500 transition-all uppercase text-[10px]">Create Profile</button>
+        
+        <form onSubmit={(e) => { 
+          e.preventDefault(); 
+          onSubmit({ id: Math.random().toString(36).substr(2, 9), ...form, assignedProjects: [], permissions: selectedPerms } as User); 
+          onClose(); 
+        }} className="space-y-4">
+          
+          <div className="grid grid-cols-2 gap-4">
+            <input required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" placeholder="Display Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            <input required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" placeholder="Username" value={form.username} onChange={e => setForm({...form, username: e.target.value.toLowerCase()})} />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <input required type="password" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" placeholder="Initial Password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+            <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" value={form.role} onChange={e => setForm({...form, role: e.target.value as UserRole})}>
+              <option value={UserRole.MANAGER}>Manager Level</option>
+              <option value={UserRole.GUEST}>Custom / Guest Level</option>
+            </select>
+          </div>
+
+          {/* PERMISSIONS CHECKBOXES (নতুন যুক্ত করা হয়েছে) */}
+          <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700 mt-4">
+             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">Custom Access Permissions</label>
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+               {AVAILABLE_PERMISSIONS.map(p => (
+                  <label key={p.id} className={`flex items-center space-x-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedPerms.includes(p.id) ? 'bg-amber-400/10 border-amber-400/50' : 'bg-slate-900 border-slate-700 hover:border-slate-500'}`}>
+                     <input 
+                       type="checkbox" 
+                       checked={selectedPerms.includes(p.id)}
+                       onChange={() => togglePerm(p.id)}
+                       className="accent-amber-400 w-4 h-4 cursor-pointer"
+                     />
+                     <span className={`text-xs font-bold ${selectedPerms.includes(p.id) ? 'text-amber-400' : 'text-slate-400'}`}>{p.label}</span>
+                  </label>
+               ))}
+             </div>
+          </div>
+
+          <button type="submit" className="w-full py-4 mt-4 bg-amber-400 text-slate-900 font-bold rounded-2xl hover:bg-amber-500 transition-all uppercase text-[10px] tracking-widest">Create Profile</button>
         </form>
+      </motion.div>
+    </div>
+  );
+};
+
+// Edit Permissions Modal for existing users
+const PermissionsChangeModal: React.FC<{ user: User, onClose: () => void, onSubmit: (id: string, perms: string[]) => void }> = ({ user, onClose, onSubmit }) => {
+  const [selectedPerms, setSelectedPerms] = useState<string[]>(user.permissions || []);
+
+  const togglePerm = (id: string) => {
+    setSelectedPerms(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-3xl p-8 shadow-2xl">
+        <h3 className="text-xl font-bold text-white mb-2">Edit Permissions</h3>
+        <p className="text-slate-400 text-sm mb-6">Modify access limits for <strong>{user.name}</strong></p>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+           {AVAILABLE_PERMISSIONS.map(p => (
+              <label key={p.id} className={`flex items-center space-x-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedPerms.includes(p.id) ? 'bg-amber-400/10 border-amber-400/50' : 'bg-slate-900 border-slate-700 hover:border-slate-500'}`}>
+                 <input type="checkbox" checked={selectedPerms.includes(p.id)} onChange={() => togglePerm(p.id)} className="accent-amber-400 w-4 h-4 cursor-pointer" />
+                 <span className={`text-xs font-bold ${selectedPerms.includes(p.id) ? 'text-amber-400' : 'text-slate-400'}`}>{p.label}</span>
+              </label>
+           ))}
+        </div>
+
+        <div className="flex gap-4">
+          <button onClick={onClose} className="flex-1 py-4 bg-slate-900 text-slate-400 font-bold rounded-2xl">Cancel</button>
+          <button onClick={() => { onSubmit(user.id, selectedPerms); onClose(); }} className="flex-1 py-4 bg-emerald-500 text-slate-950 font-bold rounded-2xl">Save Changes</button>
+        </div>
       </motion.div>
     </div>
   );
@@ -227,7 +321,6 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
         <div key={p.id} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative group">
            <div className="absolute top-4 right-4 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all">
              <button onClick={() => setEditingProject(p)} className="text-slate-600 hover:text-amber-400"><Edit2 size={16} /></button>
-             {/* এখানে ডাটাবেস থেকে ডিলিট করার ফাংশন কল করা হয়েছে */}
              <button onClick={() => deleteProjectDb(p.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
            </div>
            <h4 className="text-white font-bold text-lg mb-1">{p.name}</h4>
@@ -283,7 +376,6 @@ const ClientManager: React.FC<{ clients: Client[], setClients: (c: Client[] | ((
         <div key={c.id} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative group">
            <div className="absolute top-4 right-4 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all">
              <button onClick={() => setEditingClient(c)} className="text-slate-600 hover:text-amber-400"><Edit2 size={16} /></button>
-             {/* এখানে ডাটাবেস থেকে ডিলিট করার ফাংশন কল করা হয়েছে */}
              <button onClick={() => deleteClientDb(c.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
            </div>
            <h4 className="text-white font-bold">{c.name}</h4>
