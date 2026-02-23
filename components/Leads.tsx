@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Users, Search, Phone, Facebook, UserCheck, Trash2, Plus, X, 
-  MapPin, Briefcase, Heart, Tag 
+  MapPin, Briefcase, Heart, Tag, Edit2 
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadSource, Client } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,6 +13,7 @@ export const Leads: React.FC = () => {
   const { isAdmin } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null); // Edit এর জন্য নতুন স্টেট
   
   const [confirmConvertId, setConfirmConvertId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -123,7 +124,6 @@ export const Leads: React.FC = () => {
                       </div>
                     </td>
                     
-                    {/* Category Column */}
                     <td className="px-6 py-6">
                       {lead.category ? (
                         <div className="flex items-center space-x-2 text-amber-400 text-xs font-bold uppercase tracking-wider">
@@ -169,6 +169,16 @@ export const Leads: React.FC = () => {
                             )}
                           </>
                         )}
+
+                        {/* Edit Button */}
+                        <button 
+                          onClick={() => setEditingLead(lead)} 
+                          className="p-2 text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all" 
+                          title="Edit Lead"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+
                         {isAdmin && (
                           <>
                             {confirmDeleteId === lead.id ? (
@@ -194,33 +204,47 @@ export const Leads: React.FC = () => {
       </div>
 
       <AnimatePresence>
+        {/* Add Modal */}
         {showAddModal && <LeadModal onClose={() => setShowAddModal(false)} />}
+        
+        {/* Edit Modal */}
+        {editingLead && <LeadModal editData={editingLead} onClose={() => setEditingLead(null)} />}
       </AnimatePresence>
     </motion.div>
   );
 };
 
-const LeadModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+const LeadModal: React.FC<{ onClose: () => void, editData?: Lead }> = ({ onClose, editData }) => {
   const { leads, updateLeads } = useAppContext();
-  const [form, setForm] = useState({
+  
+  // যদি editData থাকে, তাহলে ফর্মে আগের ডাটা বসবে, নাহলে ফাঁকা ফর্ম আসবে
+  const [form, setForm] = useState(editData || {
     name: '', phone: '', address: '', profession: '', facebookId: '', hobby: '', 
-    category: 'General', // Default Category
-    notes: '', status: LeadStatus.INTERESTED, source: LeadSource.OTHER 
+    category: 'General', notes: '', status: LeadStatus.INTERESTED, source: LeadSource.OTHER 
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.phone) return alert('Name and Phone are mandatory.');
     
-    // DUPLICATE PHONE CHECK
-    const isDuplicate = leads.some(l => l.phone === form.phone);
-    if (isDuplicate) {
-      alert('❌ Denied! এই ফোন নাম্বারের ডাটাটি আগে থেকেই এন্ট্রি করা আছে।');
-      return;
+    // DUPLICATE PHONE CHECK: শুধু তখনই চেক করবে যদি এটি নতুন লিড হয়, অথবা এডিট করার সময় ফোন নাম্বার পরিবর্তন করা হয়
+    if (!editData || editData.phone !== form.phone) {
+      const isDuplicate = leads.some(l => l.phone === form.phone);
+      if (isDuplicate) {
+        alert('❌ Denied! এই ফোন নাম্বারের ডাটাটি আগে থেকেই এন্ট্রি করা আছে।');
+        return;
+      }
     }
 
-    const newLead: Lead = { id: `L_${Date.now()}`, ...form };
-    updateLeads(prev => [...prev, newLead]);
+    if (editData) {
+      // Update Existing Lead
+      updateLeads(prev => prev.map(l => l.id === editData.id ? { ...l, ...form } : l));
+    } else {
+      // Add New Lead
+      const newLead: Lead = { id: `L_${Date.now()}`, ...form };
+      updateLeads(prev => [...prev, newLead]);
+    }
+    
     onClose();
   };
 
@@ -228,8 +252,8 @@ const LeadModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
       <motion.div initial={{ scale: 0.95, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }} className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative">
         <button onClick={onClose} className="absolute top-8 right-8 text-slate-500 hover:text-white transition-colors"><X size={24} /></button>
-        <h3 className="text-3xl font-bold font-outfit text-white mb-2">New Lead</h3>
-        <p className="text-slate-500 mb-8 text-sm">Add a new potential client.</p>
+        <h3 className="text-3xl font-bold font-outfit text-white mb-2">{editData ? 'Edit Lead' : 'New Lead'}</h3>
+        <p className="text-slate-500 mb-8 text-sm">{editData ? 'Update client information.' : 'Add a new potential client.'}</p>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -243,12 +267,11 @@ const LeadModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           </div>
 
-          {/* Category Dropdown */}
           <div className="space-y-1.5">
              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Category</label>
              <select 
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-400 outline-none appearance-none"
-                value={form.category}
+                value={form.category || 'General'}
                 onChange={e => setForm({...form, category: e.target.value})}
              >
                 <option value="General">General</option>
@@ -261,28 +284,28 @@ const LeadModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Address</label>
-            <input placeholder="Address" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-400 outline-none" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+            <input placeholder="Address" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-400 outline-none" value={form.address || ''} onChange={e => setForm({...form, address: e.target.value})} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Profession</label>
-              <input placeholder="Profession" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" value={form.profession} onChange={e => setForm({...form, profession: e.target.value})} />
+              <input placeholder="Profession" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" value={form.profession || ''} onChange={e => setForm({...form, profession: e.target.value})} />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Hobby</label>
-              <input placeholder="Hobby" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" value={form.hobby} onChange={e => setForm({...form, hobby: e.target.value})} />
+              <input placeholder="Hobby" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" value={form.hobby || ''} onChange={e => setForm({...form, hobby: e.target.value})} />
             </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Facebook ID</label>
-            <input placeholder="Facebook Profile Link/ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" value={form.facebookId} onChange={e => setForm({...form, facebookId: e.target.value})} />
+            <input placeholder="Facebook Profile Link/ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" value={form.facebookId || ''} onChange={e => setForm({...form, facebookId: e.target.value})} />
           </div>
           
           <div className="flex space-x-4 pt-4">
              <button type="button" onClick={onClose} className="flex-1 bg-slate-700 text-slate-300 font-bold py-4 rounded-xl hover:bg-slate-600 transition-all uppercase text-[10px]">Cancel</button>
-             <button type="submit" className="flex-[2] bg-amber-400 text-slate-950 font-black py-4 rounded-xl hover:bg-amber-500 transition-all uppercase text-[10px]">Save Lead</button>
+             <button type="submit" className="flex-[2] bg-amber-400 text-slate-950 font-black py-4 rounded-xl hover:bg-amber-500 transition-all uppercase text-[10px]">{editData ? 'Update Lead' : 'Save Lead'}</button>
           </div>
         </form>
       </motion.div>
