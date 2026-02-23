@@ -2,25 +2,10 @@ import React, { useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
-  LayoutDashboard, 
-  BookOpen, 
-  BarChart2, 
-  Settings, 
-  LogOut, 
-  Menu,
-  PlusCircle,
-  Database,
-  Search,
-  Users,
-  Wallet,
-  UserCircle,
-  Truck,
-  MessageSquare,
-  X,
-  DollarSign // <-- নতুন আইকনটি এখানে ইমপোর্ট করা হয়েছে
+  LayoutDashboard, BookOpen, BarChart2, Settings, LogOut, Menu,
+  Database, Search, Users, Wallet, UserCircle, Truck, MessageSquare, X, DollarSign, PlusCircle, FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UserRole } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -30,24 +15,29 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
   const { setCurrentUser } = useAppContext();
-  const { isAdmin, isManager, isGuest, currentUser } = usePermissions();
+  const { isAdmin, isManager, currentUser, hasPermission } = usePermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // মেনুর আইটেম লিস্ট
+  // Client Registry রিমুভ করে বাকি মেনুর আইটেমগুলো রাখা হয়েছে
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: true },
-    { id: 'ledger', label: 'Ledger', icon: BookOpen, visible: true },
-    { id: 'deposit', label: 'Deposit & Receipt', icon: DollarSign, visible: true }, // <-- নতুন বাটনটি এখানে যুক্ত করা হয়েছে
-    { id: 'treasury', label: 'Treasury', icon: Wallet, visible: isAdmin || isManager },
-    { id: 'partners', label: 'Partners', icon: UserCircle, visible: isAdmin || isManager },
-    { id: 'suppliers', label: 'Suppliers', icon: Truck, visible: isAdmin || isManager },
-    { id: 'leads', label: 'Lead Pipeline', icon: Users, visible: isAdmin || isManager },
-    { id: 'marketing', label: 'Marketing', icon: MessageSquare, visible: isAdmin || isManager },
+    { id: 'ledger', label: 'Ledger', icon: BookOpen, visible: true }, 
+    { id: 'deposit', label: 'Deposit & Receipt', icon: DollarSign, visible: hasPermission('deposit_receipt') },
+    
+    { id: 'treasury', label: 'Cash Management', icon: Wallet, visible: hasPermission('cash_management') },
+    { id: 'partners', label: 'Partners', icon: UserCircle, visible: hasPermission('partners') },
+    { id: 'sync', label: 'Smart Sync', icon: PlusCircle, visible: hasPermission('smart_sync') },
+    
+    { id: 'suppliers', label: 'Suppliers', icon: Truck, visible: isAdmin || isManager }, 
+    { id: 'leads', label: 'Lead Pipeline', icon: Search, visible: hasPermission('leads_pipeline') },
+    { id: 'marketing', label: 'Marketing', icon: MessageSquare, visible: hasPermission('marketing') },
+    
     { id: 'insights', label: 'Insights', icon: BarChart2, visible: true },
-    { id: 'admin', label: 'Admin Panel', icon: Settings, visible: isAdmin },
-    { id: 'sync', label: 'Smart Sync', icon: PlusCircle, visible: isAdmin || isManager },
+    { id: 'admin', label: 'Admin Panel', icon: Settings, visible: hasPermission('admin_panel') },
     { id: 'backup', label: 'Backup', icon: Database, visible: isAdmin },
   ];
+
+  const visibleNavItems = navItems.filter(item => item.visible);
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -81,9 +71,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               </div>
               
               <nav className="flex-1 px-4 py-8 space-y-1 overflow-y-auto custom-scrollbar">
-                {navItems
-                  .filter(item => item.visible)
-                  .map((item) => {
+                {visibleNavItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = activeTab === item.id;
                     return (
@@ -182,7 +170,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
 const ProjectSelector: React.FC = () => {
   const { projects, selectedProjectId, setSelectedProjectId } = useAppContext();
-  const { isAdmin, isManager, currentUser, isGuest } = usePermissions();
+  const { isAdmin, isManager, currentUser } = usePermissions();
 
   const filteredProjects = projects.filter(p => {
     if (isAdmin || isManager) return true;
@@ -203,7 +191,7 @@ const ProjectSelector: React.FC = () => {
         onChange={(e) => setSelectedProjectId(e.target.value)}
         className="bg-slate-900 border border-slate-800 text-white text-[10px] md:text-xs font-bold uppercase tracking-widest rounded-xl focus:ring-2 focus:ring-amber-400 block w-full max-w-[180px] md:max-w-[280px] px-2 md:px-4 py-2 md:py-3 cursor-pointer transition-all outline-none shadow-xl shadow-black/20"
       >
-        <option value="all">{isGuest ? 'Assigned Portfolios' : 'Consolidated'}</option>
+        <option value="all">Enterprise Global View</option>
         {filteredProjects.map(p => (
           <option key={p.id} value={p.id}>{p.name}</option>
         ))}

@@ -4,14 +4,17 @@ import { UserRole, User, Project, Client } from '../types';
 import { Users, Briefcase, UserCircle, Plus, Trash2, Shield, X, Key, ShieldCheck, Lock, UserPlus, AlertTriangle, Edit2, Facebook, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// সিস্টেমে কী কী পারমিশন থাকবে তার লিস্ট
+// নতুন ৩টি পারমিশন অপশন (F, G, H) যুক্ত করা হয়েছে
 export const AVAILABLE_PERMISSIONS = [
-  { id: 'view_dashboard', label: 'View Dashboard' },
-  { id: 'view_ledger', label: 'View Ledger' },
-  { id: 'edit_ledger', label: 'Add/Edit Ledger Data' },
-  { id: 'manage_leads', label: 'Manage Lead Pipeline' },
-  { id: 'marketing', label: 'Marketing Automation' },
-  { id: 'manage_clients', label: 'Manage Client Registry' }
+  { id: 'add_ledger', label: 'A. Ledger (1. Add Entry)' },
+  { id: 'edit_ledger', label: 'A. Ledger (2. Edit Entry)' },
+  { id: 'deposit_receipt', label: 'B. Deposit & Receipt' },
+  { id: 'leads_pipeline', label: 'C. Leads Pipeline' },
+  { id: 'marketing', label: 'D. Marketing' },
+  { id: 'admin_panel', label: 'E. Admin Panel' },
+  { id: 'partners', label: 'F. Partners' },
+  { id: 'cash_management', label: 'G. Cash Management' },
+  { id: 'smart_sync', label: 'H. Smart Sync' }
 ];
 
 export const AdminPanel: React.FC = () => {
@@ -95,13 +98,11 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
                   {user.name?.charAt(0) || '?'}
                 </div>
                 <div className="flex items-center space-x-2">
-                  {/* Permissions Edit Button */}
                   {user.role !== UserRole.ADMIN && (
                     <button onClick={() => setPermissionsModalUser(user)} className="p-2 bg-slate-900 text-slate-400 hover:text-emerald-400 rounded-xl transition-all" title="Manage Permissions">
                       <CheckSquare size={16} />
                     </button>
                   )}
-                  {/* Password Edit Button */}
                   <button onClick={() => setPasswordModalUser(user)} className="p-2 bg-slate-900 text-slate-400 hover:text-amber-400 rounded-xl transition-all" title="Change Password">
                     <Key size={16} />
                   </button>
@@ -115,7 +116,6 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
               
               {user.role !== UserRole.ADMIN && (
                 <div className="space-y-4 mb-6">
-                  {/* Shows selected permissions nicely */}
                   <div className="space-y-2">
                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Permissions</p>
                      <div className="flex flex-wrap gap-1">
@@ -190,11 +190,9 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
   );
 };
 
-// Add User Modal with Checkboxes
 const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => void }> = ({ onClose, onSubmit }) => {
   const [form, setForm] = useState({ username: '', name: '', password: '', role: UserRole.MANAGER });
-  // বাই ডিফল্ট শুধু ভিউ পারমিশন দেয়া থাকবে
-  const [selectedPerms, setSelectedPerms] = useState<string[]>(['view_dashboard', 'view_ledger']); 
+  const [selectedPerms, setSelectedPerms] = useState<string[]>([]); 
 
   const togglePerm = (id: string) => {
     setSelectedPerms(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
@@ -230,7 +228,6 @@ const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => vo
             </select>
           </div>
 
-          {/* PERMISSIONS CHECKBOXES (নতুন যুক্ত করা হয়েছে) */}
           <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700 mt-4">
              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">Custom Access Permissions</label>
              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -255,7 +252,6 @@ const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => vo
   );
 };
 
-// Edit Permissions Modal for existing users
 const PermissionsChangeModal: React.FC<{ user: User, onClose: () => void, onSubmit: (id: string, perms: string[]) => void }> = ({ user, onClose, onSubmit }) => {
   const [selectedPerms, setSelectedPerms] = useState<string[]>(user.permissions || []);
 

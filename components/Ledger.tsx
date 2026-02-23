@@ -1,9 +1,8 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Search, Plus, Image as ImageIcon, Trash2, X, ChevronLeft, ChevronRight, 
-  User as UserIcon, Tag, Edit2, ArrowUpRight, ArrowDownRight, Check, Upload, Loader2, AlertTriangle, UserPlus, FolderPlus
+  Tag, Edit2, ArrowUpRight, ArrowDownRight, Check, Loader2, AlertTriangle, UserPlus, FolderPlus
 } from 'lucide-react';
 import { UserRole, Transaction, AccountId, Category, Client } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,7 +11,8 @@ import { usePermissions } from '../hooks/usePermissions';
 
 export const Ledger: React.FC = () => {
   const { transactions, deleteTransaction, selectedProjectId, projects, categories, clients, currentUser, viewAllMode } = useAppContext();
-  const { isAdmin, isGuest } = usePermissions();
+  
+  const { isAdmin, hasPermission } = usePermissions();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -27,7 +27,7 @@ export const Ledger: React.FC = () => {
     if (!cidStr || cidStr === 'undefined' || cidStr === 'null' || cidStr.trim() === '') {
       return type === 'deposit' ? 'INTERNAL REVENUE' : 'GENERAL PAYEE';
     }
-    const client = clients?.find(c => String(c.id) === cidStr);
+    const client = (clients || []).find(c => String(c.id) === cidStr);
     return client?.name || 'EXTERNAL ENTITY';
   };
 
@@ -44,18 +44,16 @@ export const Ledger: React.FC = () => {
     if (selectedProjectId !== 'all') result = result.filter(t => t.projectId === selectedProjectId);
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
-      result = result.filter(t => t.description.toLowerCase().includes(s) || getClientName(t.clientId, t.type).toLowerCase().includes(s));
+      result = result.filter(t => (t.description || '').toLowerCase().includes(s) || getClientName(t.clientId, t.type).toLowerCase().includes(s));
     }
-    return [...result].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return [...result].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   }, [transactions, selectedProjectId, searchTerm, projects, currentUser, viewAllMode, clients, categories]);
 
-  // To support "ready to see 100 in 10 pages", we slice for pagination
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginatedItems = useMemo(() => {
     return filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [filtered, currentPage]);
 
-  // Reset page when filtering
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedProjectId, viewAllMode]);
@@ -69,7 +67,9 @@ export const Ledger: React.FC = () => {
         </div>
         <div className="flex flex-wrap items-center gap-2 md:space-x-3 w-full lg:w-auto">
           <SecurityToggle />
-          {!isGuest && (
+          
+          {/* পারমিশন চেক: 'add_ledger' থাকলেই শুধু এন্ট্রি বাটনগুলো দেখাবে */}
+          {hasPermission('add_ledger') && (
             <div className="flex flex-1 md:flex-none gap-2">
               <button onClick={() => { setInitialType('deposit'); setShowAddModal(true); }} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-500 text-slate-950 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all hover:bg-emerald-400"><ArrowUpRight size={18}/><span>Deposit</span></button>
               <button onClick={() => { setInitialType('expense'); setShowAddModal(true); }} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-amber-400 text-slate-900 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all hover:bg-amber-300"><Plus size={18}/><span>Entry</span></button>
@@ -87,20 +87,8 @@ export const Ledger: React.FC = () => {
           
           <div className="flex items-center space-x-2">
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mr-2">Page {currentPage} of {Math.max(1, totalPages)}</span>
-            <button 
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-white disabled:opacity-20 transition-all"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button 
-              disabled={currentPage === totalPages || totalPages === 0}
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-white disabled:opacity-20 transition-all"
-            >
-              <ChevronRight size={16} />
-            </button>
+            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-white disabled:opacity-20 transition-all"><ChevronLeft size={16} /></button>
+            <button disabled={currentPage === totalPages || totalPages === 0} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-white disabled:opacity-20 transition-all"><ChevronRight size={16} /></button>
           </div>
         </div>
 
@@ -122,11 +110,11 @@ export const Ledger: React.FC = () => {
                   <td className="px-6 py-6">
                     <div className="flex flex-col">
                       <span className="text-white font-bold text-sm tracking-tight">
-                        {t.type === 'deposit' ? getClientName(t.clientId, 'deposit') : t.description}
+                        {t.type === 'deposit' ? getClientName(t.clientId, 'deposit') : (t.description || 'No Description')}
                       </span>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
-                          {categories.find(c => c.id === t.categoryId)?.name || 'Misc'}
+                          {(categories || []).find(c => c.id === t.categoryId)?.name || 'Misc'}
                         </span>
                         <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider flex items-center gap-1">
                           <span className="w-1 h-1 rounded-full bg-slate-700" />
@@ -139,13 +127,24 @@ export const Ledger: React.FC = () => {
                     <span className="px-2 py-1 rounded bg-slate-950 text-[9px] font-black text-amber-400 uppercase tracking-widest">{t.accountId}</span>
                   </td>
                   <td className={`px-6 py-6 text-right font-black font-outfit text-lg ${t.type === 'deposit' ? 'text-emerald-400' : 'text-slate-200'}`}>
-                    {t.type === 'expense' ? '-' : '+'}${t.amount.toLocaleString()}
+                    {t.type === 'expense' ? '-' : '+'}${Number(t.amount || 0).toLocaleString()}
                   </td>
                   <td className="px-6 py-6 text-center">
                     <div className="flex items-center justify-center space-x-2">
                       {t.attachment && <button onClick={() => setViewingAttachment(t.attachment!)} className="p-2 text-slate-500 hover:text-amber-400 transition-all"><ImageIcon size={16} /></button>}
-                      {!isGuest && <button onClick={() => setEditingTransaction(t)} className="p-2 text-slate-500 hover:text-white transition-all"><Edit2 size={16}/></button>}
-                      {isAdmin && <button onClick={() => deleteTransaction(t.id)} className="p-2 text-slate-500 hover:text-red-500 transition-all"><Trash2 size={16}/></button>}
+                      
+                      {/* পারমিশন চেক: edit_ledger (সাথে এটাও চেক করা হবে যে এই ইউজারই এন্ট্রিটি করেছে কিনা) */}
+                      {(isAdmin || (hasPermission('edit_ledger') && t.createdByUserId === currentUser?.id)) && (
+                        <button onClick={() => setEditingTransaction(t)} className="p-2 text-slate-500 hover:text-white transition-all">
+                          <Edit2 size={16}/>
+                        </button>
+                      )}
+
+                      {isAdmin && (
+                        <button onClick={() => deleteTransaction(t.id)} className="p-2 text-slate-500 hover:text-red-500 transition-all">
+                          <Trash2 size={16}/>
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -159,7 +158,6 @@ export const Ledger: React.FC = () => {
           </table>
         </div>
 
-        {/* PAGINATION FOOTER */}
         <div className="p-6 bg-slate-900/30 border-t border-slate-700 flex justify-center">
            <div className="flex items-center space-x-1">
               {Array.from({ length: Math.min(10, totalPages) }, (_, i) => i + 1).map(pageNum => (
@@ -211,7 +209,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Quick Add UI states
   const [showQuickAddCategory, setShowQuickAddCategory] = useState(false);
   const [showQuickAddClient, setShowQuickAddClient] = useState(false);
   const [quickAddName, setQuickAddName] = useState('');
@@ -219,7 +216,7 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
   const [form, setForm] = useState({
     date: transaction?.date || new Date().toISOString().split('T')[0],
     description: transaction?.description || '',
-    amount: transaction?.amount.toString() || '',
+    amount: transaction?.amount?.toString() || '',
     projectId: transaction?.projectId || String(selectedProjectId === 'all' ? (projects?.[0]?.id || '') : selectedProjectId),
     categoryId: transaction?.categoryId || '',
     accountId: transaction?.accountId || AccountId.BANK,
@@ -234,7 +231,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
     return (categories || []).filter(c => c && c.type === targetType);
   }, [categories, form.type]);
 
-  // Ensure category is always selected
   useEffect(() => {
     if (filteredCategories.length > 0 && !form.categoryId) {
       setForm(prev => ({ ...prev, categoryId: String(filteredCategories[0].id) }));
@@ -283,23 +279,14 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
     e.preventDefault();
     if (isSubmitting) return;
 
-    if (!form.categoryId || form.categoryId === "") {
-      setErrorMsg("Fiscal category selection is mandatory.");
-      return;
-    }
-    
-    if (!form.projectId || form.projectId === "") {
-      setErrorMsg("Project portfolio selection is mandatory.");
-      return;
-    }
+    if (!form.categoryId || form.categoryId === "") return setErrorMsg("Fiscal category selection is mandatory.");
+    if (!form.projectId || form.projectId === "") return setErrorMsg("Project portfolio selection is mandatory.");
 
     setIsSubmitting(true);
     setErrorMsg(null);
 
-    // CRITICAL: Ensure auditUser is included and non-null
     const auditName = transaction?.auditUser || currentUser?.name || 'Unknown User';
 
-    // Convert empty strings to null for optional relational IDs
     const payload = { 
       ...form, 
       amount: parseFloat(form.amount) || 0,
@@ -361,7 +348,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
           </div>
 
           <div className="space-y-4">
-            {/* Conditional Depositor/Client Field */}
             {form.type === 'deposit' && (
               <div className="space-y-1">
                 <div className="flex justify-between items-center mb-1">
