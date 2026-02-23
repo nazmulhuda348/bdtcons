@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Send, Users, Image as ImageIcon, QrCode, CheckCircle2, 
-  Loader2, Trash2, Smartphone, RefreshCw, Clock, Wifi, WifiOff, LogOut, Plus, ShieldCheck
+  Loader2, Trash2, Smartphone, RefreshCw, Clock, Wifi, WifiOff, LogOut, Plus, ShieldCheck, Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io, Socket } from 'socket.io-client';
@@ -12,6 +12,7 @@ const BACKEND_URL = (import.meta as any).env?.VITE_MARKETING_BACKEND_URL || 'htt
 export const MarketingAutomation: React.FC = () => {
   const { leads } = useAppContext();
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all'); // নতুন: Category State
   const [message, setMessage] = useState('');
   
   // Multiple Files State
@@ -30,6 +31,21 @@ export const MarketingAutomation: React.FC = () => {
   const socketRef = useRef<Socket | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ১. ইউনিক ক্যাটাগরিগুলো বের করা
+  const categories = useMemo(() => {
+    const cats = new Set((leads || []).map(l => l.category || 'General'));
+    return ['all', ...Array.from(cats)];
+  }, [leads]);
+
+  // ২. ক্যাটাগরি অনুযায়ী লিড ফিল্টার করা
+  const filteredLeadsList = useMemo(() => {
+    return (leads || []).filter(l => {
+      const hasPhone = l.phone && l.phone.trim().length >= 8;
+      const catMatch = selectedCategory === 'all' || (l.category || 'General') === selectedCategory;
+      return hasPhone && catMatch;
+    });
+  }, [leads, selectedCategory]);
+
   const updateQrState = (qr: string) => {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
     setQrCode(qrUrl);
@@ -37,8 +53,11 @@ export const MarketingAutomation: React.FC = () => {
     setIsDisconnecting(false);
   };
 
+  // ফিক্স ১: সকেট কানেকশন আপডেট ও রিয়েল-টাইম স্ট্যাটাস
   useEffect(() => {
-    const socket = io(BACKEND_URL);
+    const socket = io(BACKEND_URL, {
+      transports: ['websocket', 'polling'] // Render সার্ভারের জন্য এটি জরুরি
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => { setBackendOnline(true); fetchStatus(); });
@@ -53,20 +72,31 @@ export const MarketingAutomation: React.FC = () => {
       setIsConnected(false); setQrCode(null); setIsConnecting(false); setIsDisconnecting(false);
     });
 
-    return () => { socket.disconnect(); };
+    // প্রতি ২০ সেকেন্ড পর পর সার্ভার হেলথ চেক করবে
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 20000);
+
+    return () => { 
+      socket.disconnect(); 
+      clearInterval(interval);
+    };
   }, []);
 
   const fetchStatus = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/status`);
-      const data = await res.json();
-      
-      if (data.status === 'CONNECTED') {
-        setIsConnected(true); setIsConnecting(false); setQrCode(null);
-      } else if (data.status === 'QR_READY' && data.qr) {
-        updateQrState(data.qr);
+      if (res.ok) {
+        setBackendOnline(true);
+        const data = await res.json();
+        if (data.status === 'CONNECTED') {
+          setIsConnected(true); setIsConnecting(false); setQrCode(null);
+        } else if (data.status === 'QR_READY' && data.qr) {
+          updateQrState(data.qr);
+        } else {
+          setIsConnected(false); setIsConnecting(false); setQrCode(null);
+        }
       } else {
-        setIsConnected(false); setIsConnecting(false); setQrCode(null);
+        setBackendOnline(false);
       }
     } catch (e) { setBackendOnline(false); }
   };
@@ -74,18 +104,24 @@ export const MarketingAutomation: React.FC = () => {
   const toggleLead = (id: string) => setSelectedLeads(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   
   const toggleAll = () => {
-    const filteredLeads = (leads || []).filter(l => l.phone && l.phone.trim().length >= 8);
-    if (selectedLeads.length === filteredLeads.length) setSelectedLeads([]);
-    else setSelectedLeads(filteredLeads.map(l => l.id));
+    if (selectedLeads.length === filteredLeadsList.length && filteredLeadsList.length > 0) {
+      setSelectedLeads([]);
+    } else {
+      setSelectedLeads(filteredLeadsList.map(l => l.id));
+    }
   };
 
+  // ফিক্স ২: মাল্টিপল ফাইল আপলোড লজিক আপডেট
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      // "as File[]" যুক্ত করে টাইপস্ক্রিপ্টকে ফাইলের ধরন বুঝিয়ে দেওয়া হলো
-      const filesArray = Array.from(e.target.files) as File[];
+    if (e.target.files && e.target.files.length > 0) {
+      const filesArray = Array.from(e.target.files);
       setMediaFiles(prev => [...prev, ...filesArray]);
+      
       const previewsArray = filesArray.map((file: File) => URL.createObjectURL(file));
       setMediaPreviews(prev => [...prev, ...previewsArray]);
+
+      // ইনপুট ক্লিয়ার করা, যাতে একই ফাইল বা নতুন ফাইল আবার আপলোড করা যায়
+      e.target.value = '';
     }
   };
 
@@ -103,7 +139,6 @@ export const MarketingAutomation: React.FC = () => {
     try {
       await fetch(`${BACKEND_URL}/api/marketing/connect`, { method: 'POST' });
       
-      // ১০ সেকেন্ড পর যদি QR না আসে, তবে লোডিং বন্ধ করে দেবে
       setTimeout(() => {
         if (!qrCode && !isConnected) {
             setIsConnecting(false);
@@ -132,16 +167,11 @@ export const MarketingAutomation: React.FC = () => {
     setIsSending(true);
     setSendingProgress(0);
 
-    const filteredLeads = (leads || []).filter(l => l.phone && l.phone.trim().length >= 8);
-    const targetPhones = filteredLeads.filter(l => selectedLeads.includes(l.id)).map(l => l.phone);
+    const targetPhones = filteredLeadsList.filter(l => selectedLeads.includes(l.id)).map(l => l.phone);
 
-    // ==========================================
-    // অটোমেটিক ব্র্যান্ড সিগনেচার লজিক
-    // ==========================================
     let finalMessage = message.trim();
     if (finalMessage || mediaFiles.length > 0) {
       const signature = `\n\n------------------------\n🟢 *Building Developments & Technologies*\n_Smart Real Estate. Smart Software. Smart Technologies._`;
-      // যদি ইউজার মেসেজ লিখে থাকে, তবে তার সাথে সিগনেচার যুক্ত হবে। আর শুধু ছবি পাঠালে ছবির ক্যাপশনে সিগনেচার যাবে।
       finalMessage = finalMessage ? finalMessage + signature : signature.trim();
     }
 
@@ -164,7 +194,7 @@ export const MarketingAutomation: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients: targetPhones,
-          message: finalMessage, // আপডেট করা মেসেজ পাঠানো হচ্ছে
+          message: finalMessage, 
           mediaList 
         })
       });
@@ -187,8 +217,6 @@ export const MarketingAutomation: React.FC = () => {
       setIsSending(false);
     }
   };
-
-  const filteredLeadsList = useMemo(() => (leads || []).filter(l => l.phone && l.phone.trim().length >= 8), [leads]);
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
@@ -234,7 +262,6 @@ export const MarketingAutomation: React.FC = () => {
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Message Body (Caption)</label>
                   <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)} placeholder="Type your main message here..." className="w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 text-white text-sm focus:ring-4 focus:ring-amber-400/10 outline-none resize-none" />
                   
-                  {/* UI Hint for Automatic Signature */}
                   <div className="flex items-start space-x-2 mt-2 px-2">
                     <ShieldCheck size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
                     <p className="text-[10px] text-slate-400 leading-tight">
@@ -284,12 +311,38 @@ export const MarketingAutomation: React.FC = () => {
         {/* RECIPIENTS */}
         <div className="lg:col-span-7">
           <div className="bg-slate-800 rounded-[2.5rem] border border-slate-700 shadow-2xl overflow-hidden flex flex-col h-[750px]">
-            <div className="p-8 border-b border-slate-700 bg-slate-900/50 flex items-center justify-between">
+            <div className="p-8 border-b border-slate-700 bg-slate-900/50 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-white font-outfit">Recipients</h3>
                 <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{filteredLeadsList.length} Contacts</p>
               </div>
-              <button onClick={toggleAll} className="bg-slate-900 border border-slate-800 px-6 py-3 rounded-xl text-[10px] font-black text-slate-300 uppercase hover:text-white transition-all">{selectedLeads.length === filteredLeadsList.length ? 'Clear' : 'Select All'}</button>
+              
+              <div className="flex items-center gap-3">
+                {/* ഫিক্স ৩: Category Filter Dropdown */}
+                <div className="flex items-center space-x-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
+                  <div className="px-2 py-1 bg-slate-800 rounded-lg">
+                    <Filter size={12} className="text-amber-400" />
+                  </div>
+                  <select 
+                    value={selectedCategory}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      setSelectedLeads([]); 
+                    }}
+                    className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none border-none pr-2 cursor-pointer"
+                  >
+                    {categories.map(cat => (
+                      <option key={cat} value={cat} className="bg-slate-800 text-white">
+                        {cat === 'all' ? 'All Categories' : cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button onClick={toggleAll} className="bg-slate-900 border border-slate-800 px-6 py-3 rounded-xl text-[10px] font-black text-slate-300 uppercase hover:text-white transition-all">
+                  {selectedLeads.length === filteredLeadsList.length && filteredLeadsList.length > 0 ? 'Clear' : 'Select All'}
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -298,11 +351,12 @@ export const MarketingAutomation: React.FC = () => {
                      <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                         <th className="px-8 py-4 w-12 text-center">Sel</th>
                         <th className="px-8 py-4">Name</th>
+                        <th className="px-8 py-4">Category</th>
                         <th className="px-8 py-4">Phone</th>
                      </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700/50">
-                     {filteredLeadsList.map((lead) => (
+                     {filteredLeadsList.length > 0 ? filteredLeadsList.map((lead) => (
                         <tr key={lead.id} onClick={() => toggleLead(lead.id)} className={`cursor-pointer transition-colors group ${selectedLeads.includes(lead.id) ? 'bg-amber-400/5' : 'hover:bg-slate-700/20'}`}>
                            <td className="px-8 py-6 text-center">
                               <div className={`mx-auto w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedLeads.includes(lead.id) ? 'bg-amber-400 border-amber-400 text-slate-950' : 'border-slate-700'}`}>
@@ -310,9 +364,16 @@ export const MarketingAutomation: React.FC = () => {
                               </div>
                            </td>
                            <td className="px-8 py-6 text-sm font-bold text-slate-300">{lead.name}</td>
+                           <td className="px-8 py-6">
+                              <span className="text-[9px] font-bold px-2 py-1 bg-slate-700 rounded text-amber-400 uppercase tracking-wider">{lead.category || 'General'}</span>
+                           </td>
                            <td className="px-8 py-6 text-xs text-slate-500">{lead.phone}</td>
                         </tr>
-                     ))}
+                     )) : (
+                        <tr>
+                          <td colSpan={4} className="text-center py-10 text-slate-500">No leads available in this category.</td>
+                        </tr>
+                     )}
                   </tbody>
                </table>
             </div>

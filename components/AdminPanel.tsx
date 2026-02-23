@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { UserRole, User, Project, Client } from '../types';
@@ -6,7 +5,8 @@ import { Users, Briefcase, UserCircle, Plus, Trash2, Shield, X, Key, ShieldCheck
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const AdminPanel: React.FC = () => {
-  const { users, projects, clients, updateUsers, updateProjects, updateClients } = useAppContext();
+  // এখানে deleteUser, deleteProject, deleteClient যুক্ত করা হয়েছে
+  const { users, projects, clients, updateUsers, updateProjects, updateClients, deleteUser, deleteProject, deleteClient } = useAppContext();
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'projects' | 'clients'>('users');
 
   const tabs = [
@@ -38,22 +38,28 @@ export const AdminPanel: React.FC = () => {
       </div>
 
       <div className="mt-6">
-        {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} />}
-        {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} />}
-        {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} />}
+        {/* Component গুলোতে delete ফাংশনগুলো পাঠানো হচ্ছে */}
+        {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} deleteUserDb={deleteUser} />}
+        {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} deleteProjectDb={deleteProject} />}
+        {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} />}
       </div>
     </div>
   );
 };
 
-const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User[]) => User[])) => void, projects: Project[] }> = ({ users, setUsers, projects }) => {
+const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User[]) => User[])) => void, projects: Project[], deleteUserDb: (id: string) => Promise<void> }> = ({ users, setUsers, projects, deleteUserDb }) => {
   const [passwordModalUser, setPasswordModalUser] = useState<User | null>(null);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const deleteUser = (id: string) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
-    setConfirmDeleteId(null);
+  // ডাটাবেস থেকে ডিলিট করার ফাংশন
+  const handleDeleteUser = async (id: string) => {
+    try {
+      await deleteUserDb(id);
+      setConfirmDeleteId(null);
+    } catch (error) {
+      console.error("Error deleting user:", error);
+    }
   };
 
   const toggleProjectAccess = (userId: string, projectId: string) => {
@@ -118,7 +124,7 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
                <div className="mt-auto pt-4 border-t border-slate-700/50">
                  {confirmDeleteId === user.id ? (
                    <div className="flex items-center space-x-2 animate-in fade-in zoom-in duration-200">
-                     <button onClick={() => deleteUser(user.id)} className="flex-1 bg-red-500 text-white text-[10px] font-bold py-2 rounded-lg uppercase tracking-wider">Confirm</button>
+                     <button onClick={() => handleDeleteUser(user.id)} className="flex-1 bg-red-500 text-white text-[10px] font-bold py-2 rounded-lg uppercase tracking-wider">Confirm</button>
                      <button onClick={() => setConfirmDeleteId(null)} className="flex-1 bg-slate-700 text-slate-300 text-[10px] font-bold py-2 rounded-lg uppercase tracking-wider">Cancel</button>
                    </div>
                  ) : (
@@ -159,6 +165,7 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
   );
 };
 
+// AddUserModal এবং PasswordChangeModal অপরিবর্তিত আছে
 const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => void }> = ({ onClose, onSubmit }) => {
   const [form, setForm] = useState({ username: '', name: '', password: '', role: UserRole.MANAGER });
   return (
@@ -202,7 +209,7 @@ const PasswordChangeModal: React.FC<{ user: User, onClose: () => void, onSubmit:
   );
 };
 
-const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[] | ((prev: Project[]) => Project[])) => void }> = ({ projects, setProjects }) => {
+const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[] | ((prev: Project[]) => Project[])) => void, deleteProjectDb: (id: string) => Promise<void> }> = ({ projects, setProjects, deleteProjectDb }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [newProject, setNewProject] = useState<Partial<Project>>({ name: '', serviceMarkup: 10, description: '' });
@@ -220,7 +227,8 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
         <div key={p.id} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative group">
            <div className="absolute top-4 right-4 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all">
              <button onClick={() => setEditingProject(p)} className="text-slate-600 hover:text-amber-400"><Edit2 size={16} /></button>
-             <button onClick={() => setProjects(prev => prev.filter(x => x.id !== p.id))} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
+             {/* এখানে ডাটাবেস থেকে ডিলিট করার ফাংশন কল করা হয়েছে */}
+             <button onClick={() => deleteProjectDb(p.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
            </div>
            <h4 className="text-white font-bold text-lg mb-1">{p.name}</h4>
            <div className="bg-slate-900 rounded-xl p-3 flex justify-between mt-3"><span className="text-xs text-slate-500 uppercase font-bold">Fee</span><span className="text-amber-400 font-bold">{p.serviceMarkup}%</span></div>
@@ -257,7 +265,7 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
   );
 };
 
-const ClientManager: React.FC<{ clients: Client[], setClients: (c: Client[] | ((prev: Client[]) => Client[])) => void }> = ({ clients, setClients }) => {
+const ClientManager: React.FC<{ clients: Client[], setClients: (c: Client[] | ((prev: Client[]) => Client[])) => void, deleteClientDb: (id: string) => Promise<void> }> = ({ clients, setClients, deleteClientDb }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [newClient, setNewClient] = useState({ name: '', email: '', phone: '', facebookId: '' });
@@ -275,7 +283,8 @@ const ClientManager: React.FC<{ clients: Client[], setClients: (c: Client[] | ((
         <div key={c.id} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative group">
            <div className="absolute top-4 right-4 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all">
              <button onClick={() => setEditingClient(c)} className="text-slate-600 hover:text-amber-400"><Edit2 size={16} /></button>
-             <button onClick={() => setClients(prev => prev.filter(x => x.id !== c.id))} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
+             {/* এখানে ডাটাবেস থেকে ডিলিট করার ফাংশন কল করা হয়েছে */}
+             <button onClick={() => deleteClientDb(c.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
            </div>
            <h4 className="text-white font-bold">{c.name}</h4>
            <div className="space-y-1 mt-2">

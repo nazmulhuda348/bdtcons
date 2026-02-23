@@ -72,7 +72,11 @@ export interface Lead {
   name: string;
   phone: string;
   status: LeadStatus;
-  source: LeadSource;
+  address?: string;
+  profession?: string;
+  facebookId?: string;
+  hobby?: string;
+  category?: string;
   notes: string;
 }
 
