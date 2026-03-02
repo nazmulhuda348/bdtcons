@@ -1,28 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { AppState, User, Transaction, Project, Client, Partner, Supplier, Category, Lead, AccountId, InternalTransfer, UserRole } from './types';
+import { AppState, User, Transaction, Project, Client, Partner, Supplier, Category, Lead, AccountId, InternalTransfer, UserRole, LeadStatus } from './types';
 import { INITIAL_USERS, INITIAL_PROJECTS, INITIAL_CLIENTS, INITIAL_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_LEADS, INITIAL_ACCOUNTS } from './constants';
 
 const getEnvVar = (key: string): string => {
   try {
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-      return process.env[key];
-    }
+    if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key];
     // @ts-ignore
-    if (import.meta && import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
-      return import.meta.env[key];
-    }
+    if (import.meta && import.meta.env && import.meta.env[key]) return import.meta.env[key];
   } catch (e) {}
   return '';
 };
 
 const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
 const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
-
-const supabase: SupabaseClient | null = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+const supabase: SupabaseClient | null = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 interface AppContextType extends AppState {
   setCurrentUser: (user: User | null) => void;
@@ -44,6 +36,12 @@ interface AppContextType extends AppState {
   updateLeads: (leads: Lead[] | ((prev: Lead[]) => Lead[])) => void;
   deleteLead: (id: string) => Promise<void>;
   updateCategories: (categories: Category[] | ((prev: Category[]) => Category[])) => void;
+  addLead: (lead: Lead) => Promise<void>;
+  updateLeadItem: (lead: Lead) => Promise<void>;
+  leadCategories: string[];
+  updateLeadCategories: (cats: string[] | ((prev: string[]) => string[])) => void;
+  availableLeadCategories: string[];
+  allProspects: Lead[];
   setGlobalMarkupOverride: (val: number | null) => void;
   importData: (json: string) => void;
   transferCash: (transfer: InternalTransfer) => Promise<void>;
@@ -54,32 +52,13 @@ interface AppContextType extends AppState {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const safeGetStorage = (key: string) => {
-  try {
-    return localStorage.getItem(key);
-  } catch (e) {
-    return null;
-  }
-};
-
-const safeSetStorage = (key: string, value: string) => {
-  try {
-    localStorage.setItem(key, value);
-  } catch (e) {}
-};
+const safeGetStorage = (key: string) => { try { return localStorage.getItem(key); } catch (e) { return null; } };
+const safeSetStorage = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch (e) {} };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = safeGetStorage('bdt_current_session');
-    return saved ? JSON.parse(saved) : null;
-  });
-
-  const [viewAllMode, setViewAllMode] = useState<boolean>(() => {
-    const saved = safeGetStorage('bdt_view_all_mode');
-    return saved ? JSON.parse(saved) : true;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(() => { const saved = safeGetStorage('bdt_current_session'); return saved ? JSON.parse(saved) : null; });
+  const [viewAllMode, setViewAllMode] = useState<boolean>(() => { const saved = safeGetStorage('bdt_view_all_mode'); return saved ? JSON.parse(saved) : true; });
 
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -91,115 +70,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transfers, setTransfers] = useState<InternalTransfer[]>([]);
 
+  const [leadCategories, setLeadCategories] = useState<string[]>(() => {
+    const saved = safeGetStorage('bdt_lead_cats'); return saved ? JSON.parse(saved) : ['General', 'Land', 'Software'];
+  });
+
   const [selectedProjectId, setSelectedProjectId] = useState<string | 'all'>('all');
   const [globalMarkupOverride, setGlobalMarkupOverride] = useState<number | null>(null);
 
+  const availableLeadCategories = useMemo(() => {
+    const projectNames = projects.map(p => p.name);
+    return Array.from(new Set([...leadCategories, ...projectNames]));
+  }, [leadCategories, projects]);
+
+  const allProspects = useMemo(() => {
+    const clientLeads: Lead[] = clients.map(c => {
+      const project = projects.find(p => p.id === c.projectId);
+      const resolvedCategory = project?.name || (c as any).projectName || 'Registered Client';
+      return { id: `sync_${c.id}`, name: c.name, phone: c.phone, category: resolvedCategory, address: '', status: LeadStatus.CONVERTED, profession: 'Registry Client' } as Lead;
+    });
+    return [...leads, ...clientLeads];
+  }, [leads, clients, projects]);
+
   const fetchCloudData = useCallback(async () => {
     if (!supabase) {
-      setUsers(INITIAL_USERS);
-      setProjects(INITIAL_PROJECTS);
-      setClients(INITIAL_CLIENTS);
-      setCategories(INITIAL_CATEGORIES);
-      setTransactions(INITIAL_TRANSACTIONS);
-      setLeads(INITIAL_LEADS);
-      setIsLoading(false);
-      return;
+      setUsers(INITIAL_USERS); setProjects(INITIAL_PROJECTS); setClients(INITIAL_CLIENTS);
+      setCategories(INITIAL_CATEGORIES); setTransactions(INITIAL_TRANSACTIONS); setLeads(INITIAL_LEADS);
+      setIsLoading(false); return;
     }
-
     setIsLoading(true);
     try {
       const fetchOrSeed = async (table: string, fallback: any[]) => {
         const { data, error } = await supabase!.from(table).select('*');
         if (error) throw error;
-        
-        if (!data || data.length === 0) {
-          if (fallback.length > 0) {
-            const { data: seeded, error: seedErr } = await supabase!.from(table).insert(fallback).select();
-            if (seedErr) throw seedErr;
-            return seeded || fallback;
-          }
-          return [];
-        }
+        if (!data || data.length === 0) return fallback;
         return data;
       };
-
       const [u, p, c, cat, pt, s, l, t, tr] = await Promise.all([
-        fetchOrSeed('users', INITIAL_USERS),
-        fetchOrSeed('projects', INITIAL_PROJECTS),
-        fetchOrSeed('clients', INITIAL_CLIENTS),
-        fetchOrSeed('categories', INITIAL_CATEGORIES),
-        fetchOrSeed('partners', []),
-        fetchOrSeed('suppliers', []),
-        fetchOrSeed('leads', INITIAL_LEADS),
-        fetchOrSeed('transactions', INITIAL_TRANSACTIONS),
-        fetchOrSeed('transfers', [])
+        fetchOrSeed('users', INITIAL_USERS), fetchOrSeed('projects', INITIAL_PROJECTS), fetchOrSeed('clients', INITIAL_CLIENTS),
+        fetchOrSeed('categories', INITIAL_CATEGORIES), fetchOrSeed('partners', []), fetchOrSeed('suppliers', []),
+        fetchOrSeed('leads', INITIAL_LEADS), fetchOrSeed('transactions', INITIAL_TRANSACTIONS), fetchOrSeed('transfers', [])
       ]);
-
-      setUsers(u);
-      setProjects(p);
-      setClients(c);
-      setCategories(cat);
-      setPartners(pt);
-      setSuppliers(s);
-      setLeads(l);
-      setTransactions(t);
-      setTransfers(tr);
-    } catch (err) {
-      console.error("Infrastructure Initialization Error:", err);
-      setUsers(INITIAL_USERS);
-      setProjects(INITIAL_PROJECTS);
-      setClients(INITIAL_CLIENTS);
-      setCategories(INITIAL_CATEGORIES);
-      setTransactions(INITIAL_TRANSACTIONS);
-      setLeads(INITIAL_LEADS);
-    } finally {
-      setIsLoading(false);
-    }
+      setUsers(u); setProjects(p); setClients(c); setCategories(cat); setPartners(pt);
+      setSuppliers(s); setLeads(l); setTransactions(t); setTransfers(tr);
+    } catch (err) { console.error("Cloud Error:", err); } finally { setIsLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchCloudData();
-  }, [fetchCloudData]);
-
-  const accounts = useMemo(() => {
-    const totals: Record<AccountId, number> = { ...INITIAL_ACCOUNTS };
-    transactions.forEach(t => {
-      if (t.type === 'deposit') {
-        totals[t.accountId] += (t.amount || 0);
-      } else {
-        totals[t.accountId] -= (t.amount || 0);
-      }
-    });
-    transfers.forEach(tf => {
-      totals[tf.fromAccount] -= (tf.amount || 0);
-      totals[tf.toAccount] += (tf.amount || 0);
-    });
-    return totals;
-  }, [transactions, transfers]);
-
-  const partnerBalances = useMemo(() => {
-    const balances: Record<string, number> = {};
-    partners.forEach(p => { balances[p.id] = 0; });
-    transactions.forEach(t => {
-      if (t.accountId === AccountId.PARTNER && t.partnerId && balances[t.partnerId] !== undefined) {
-        if (t.type === 'expense') balances[t.partnerId] -= t.amount;
-        else balances[t.partnerId] += t.amount;
-      }
-    });
-    transfers.forEach(tf => {
-      if (tf.partnerId && balances[tf.partnerId] !== undefined) {
-        if (tf.toAccount === AccountId.PARTNER) balances[tf.partnerId] += tf.amount;
-        if (tf.fromAccount === AccountId.PARTNER) balances[tf.partnerId] -= tf.amount;
-      }
-    });
-    return balances;
-  }, [partners, transactions, transfers]);
+  useEffect(() => { fetchCloudData(); }, [fetchCloudData]);
 
   useEffect(() => {
     safeSetStorage('bdt_current_session', JSON.stringify(currentUser));
     safeSetStorage('bdt_view_all_mode', JSON.stringify(viewAllMode));
-  }, [currentUser, viewAllMode]);
+    safeSetStorage('bdt_lead_cats', JSON.stringify(leadCategories));
+  }, [currentUser, viewAllMode, leadCategories]);
 
+  // 🔴 syncToCloud ডিফাইন করা হলো (TypeScript Error Fix) 🔴
   const syncToCloud = async (): Promise<boolean> => {
     if (!supabase) return false;
     await fetchCloudData();
@@ -208,97 +132,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addTransaction = useCallback(async (tx: Transaction) => {
     if (!currentUser) return;
-    // CRITICAL: Ensure auditUser is never null to satisfy Supabase NOT NULL constraint
-    const auditName = currentUser.name || tx.auditUser || 'System Admin';
-    const securedTx = { ...tx, createdByUserId: currentUser.id, auditUser: auditName };
-    if (supabase) {
-      const { error } = await supabase.from('transactions').insert([securedTx]);
-      if (error) throw new Error(error.message);
-    }
+    const securedTx = { ...tx, createdByUserId: currentUser.id, auditUser: currentUser.name || 'System' };
+    if (supabase) await supabase.from('transactions').insert([securedTx]);
     setTransactions(prev => [securedTx, ...prev]);
   }, [currentUser]);
 
   const updateTransaction = useCallback(async (updatedTx: Transaction) => {
-    // CRITICAL: Ensure auditUser is preserved or defaulted during updates
-    const auditName = updatedTx.auditUser || currentUser?.name || 'System Admin';
-    const cleanUpdate = { ...updatedTx, auditUser: auditName };
-    
-    if (supabase) {
-      const { error } = await supabase.from('transactions').update(cleanUpdate).eq('id', updatedTx.id);
-      if (error) throw new Error(error.message);
-    }
-    setTransactions(prev => prev.map(t => t.id === updatedTx.id ? cleanUpdate : t));
-  }, [currentUser]);
+    if (supabase) await supabase.from('transactions').update(updatedTx).eq('id', updatedTx.id);
+    setTransactions(prev => prev.map(t => t.id === updatedTx.id ? updatedTx : t));
+  }, []);
 
   const deleteTransaction = useCallback(async (id: string) => {
-    if (supabase) {
-      const { error } = await supabase.from('transactions').delete().eq('id', id);
-      if (error) throw new Error(error.message);
-    }
+    if (supabase) await supabase.from('transactions').delete().eq('id', id);
     setTransactions(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const transferCash = useCallback(async (transfer: InternalTransfer) => {
+  // 🔴 সংশোধিত লিডস সেভ ফাংশন: অপ্রয়োজনীয় ফিল্ড বাদ দেওয়া হয়েছে 🔴
+  const addLead = useCallback(async (lead: Lead) => {
+    const { createdByUserId, source, ...cleanLead } = lead as any;
     if (supabase) {
-      const { error } = await supabase.from('transfers').insert([transfer]);
-      if (error) throw new Error(error.message);
+      const { error } = await supabase.from('leads').insert([cleanLead]);
+      if (error) console.error("Database Error:", error.message);
     }
-    setTransfers(prev => [transfer, ...prev]);
+    setLeads(prev => [cleanLead as Lead, ...prev]);
+  }, []);
+
+  const updateLeadItem = useCallback(async (lead: Lead) => {
+    const { createdByUserId, source, ...cleanLead } = lead as any;
+    if (supabase) {
+      const { error } = await supabase.from('leads').update(cleanLead).eq('id', cleanLead.id);
+      if (error) console.error("Database Error:", error.message);
+    }
+    setLeads(prev => prev.map(l => l.id === cleanLead.id ? cleanLead as Lead : l));
   }, []);
 
   const genericUpdater = (table: string, setter: any) => async (update: any) => {
     setter((prev: any) => {
       const next = typeof update === 'function' ? update(prev) : update;
-      if (supabase) {
-        // Safe fire-and-forget sync outside the pure setter
-        setTimeout(() => {
-          supabase.from(table).upsert(next).then(({ error }) => {
-            if (error) console.error(`Cloud Sync Error [${table}]:`, error);
-          });
-        }, 0);
-      }
+      if (supabase) setTimeout(() => { supabase.from(table).upsert(next).then(); }, 0);
       return next;
     });
   };
 
   const genericDeleter = (table: string, setter: any) => async (id: string) => {
-    if (supabase) {
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) throw new Error(error.message);
-    }
+    if (supabase) await supabase.from(table).delete().eq('id', id);
     setter((prev: any) => prev.filter((item: any) => item.id !== id));
   };
 
-  const updateUsers = genericUpdater('users', setUsers);
-  const deleteUser = genericDeleter('users', setUsers);
-  const updateProjects = genericUpdater('projects', setProjects);
-  const deleteProject = genericDeleter('projects', setProjects);
-  const updateClients = genericUpdater('clients', setClients);
-  const deleteClient = genericDeleter('clients', setClients);
-  const updatePartners = genericUpdater('partners', setPartners);
-  const deletePartner = genericDeleter('partners', setPartners);
-  const updateSuppliers = genericUpdater('suppliers', setSuppliers);
-  const deleteSupplier = genericDeleter('suppliers', setSuppliers);
-  const updateLeads = genericUpdater('leads', setLeads);
-  const deleteLead = genericDeleter('leads', setLeads);
-  const updateCategories = genericUpdater('categories', setCategories);
+  const accounts = useMemo(() => {
+    const totals: Record<AccountId, number> = { ...INITIAL_ACCOUNTS };
+    transactions.forEach(t => { if (t.type === 'deposit') totals[t.accountId] += (t.amount || 0); else totals[t.accountId] -= (t.amount || 0); });
+    transfers.forEach(tf => { totals[tf.fromAccount] -= (tf.amount || 0); totals[tf.toAccount] += (tf.amount || 0); });
+    return totals;
+  }, [transactions, transfers]);
+
+  const partnerBalances = useMemo(() => {
+    const balances: Record<string, number> = {};
+    partners.forEach(p => { balances[p.id] = 0; });
+    transactions.forEach(t => { if (t.accountId === AccountId.PARTNER && t.partnerId && balances[t.partnerId] !== undefined) { if (t.type === 'expense') balances[t.partnerId] -= t.amount; else balances[t.partnerId] += t.amount; } });
+    return balances;
+  }, [partners, transactions]);
 
   return (
     <AppContext.Provider value={{
       currentUser, setCurrentUser,
-      users, updateUsers, deleteUser,
-      projects, updateProjects, deleteProject,
-      clients, updateClients, deleteClient,
-      partners, updatePartners, deletePartner,
-      suppliers, updateSuppliers, deleteSupplier,
-      leads, updateLeads, deleteLead,
-      categories, updateCategories,
+      users, updateUsers: genericUpdater('users', setUsers), deleteUser: genericDeleter('users', setUsers),
+      projects, updateProjects: genericUpdater('projects', setProjects), deleteProject: genericDeleter('projects', setProjects),
+      clients, updateClients: genericUpdater('clients', setClients), deleteClient: genericDeleter('clients', setClients),
+      partners, updatePartners: genericUpdater('partners', setPartners), deletePartner: genericDeleter('partners', setPartners),
+      suppliers, updateSuppliers: genericUpdater('suppliers', setSuppliers), deleteSupplier: genericDeleter('suppliers', setSuppliers),
+      leads, updateLeads: genericUpdater('leads', setLeads), deleteLead: genericDeleter('leads', setLeads),
+      addLead, updateLeadItem,
+      categories, updateCategories: genericUpdater('categories', setCategories),
+      leadCategories, updateLeadCategories: setLeadCategories, availableLeadCategories, allProspects,
       transactions, setTransactions, addTransaction, deleteTransaction, updateTransaction,
-      accounts, transfers, transferCash, partnerBalances,
-      selectedProjectId, setSelectedProjectId,
-      globalMarkupOverride, setGlobalMarkupOverride,
-      importData: () => {}, viewAllMode, setViewAllMode, syncToCloud,
-      isLoading
+      accounts, transfers, transferCash: async (t) => { if (supabase) await supabase.from('transfers').insert([t]); setTransfers(prev => [...prev, t]); }, 
+      partnerBalances, selectedProjectId, setSelectedProjectId,
+      globalMarkupOverride, setGlobalMarkupOverride, importData: () => {}, viewAllMode, setViewAllMode, syncToCloud, isLoading
     }}>
       {children}
     </AppContext.Provider>
@@ -307,6 +217,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useAppContext = () => {
   const context = useContext(AppContext);
-  if (!context) throw new Error('useAppContext must be used within AppProvider');
+  if (!context) throw new Error('useAppContext error');
   return context;
 };

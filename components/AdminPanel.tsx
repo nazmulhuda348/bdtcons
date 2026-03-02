@@ -52,7 +52,8 @@ export const AdminPanel: React.FC = () => {
       <div className="mt-6">
         {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} deleteUserDb={deleteUser} />}
         {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} deleteProjectDb={deleteProject} />}
-        {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} />}
+        {/* 🔴 এখানে projects পাস করা হয়েছে 🔴 */}
+        {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} projects={projects} />}
       </div>
     </div>
   );
@@ -354,10 +355,16 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
   );
 };
 
-const ClientManager: React.FC<{ clients: Client[], setClients: (c: Client[] | ((prev: Client[]) => Client[])) => void, deleteClientDb: (id: string) => Promise<void> }> = ({ clients, setClients, deleteClientDb }) => {
+// 🔴 ClientManager এ প্রজেক্ট রিসিভ করে ড্রপডাউন এবং ব্যাজ যোগ করা হয়েছে 🔴
+const ClientManager: React.FC<{ 
+  clients: Client[], 
+  setClients: (c: Client[] | ((prev: Client[]) => Client[])) => void, 
+  deleteClientDb: (id: string) => Promise<void>,
+  projects: Project[] 
+}> = ({ clients, setClients, deleteClientDb, projects }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [newClient, setNewClient] = useState({ name: '', email: '', phone: '', facebookId: '' });
+  const [newClient, setNewClient] = useState<Partial<Client>>({ name: '', email: '', phone: '', facebookId: '', projectId: '' });
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,55 +375,102 @@ const ClientManager: React.FC<{ clients: Client[], setClients: (c: Client[] | ((
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {clients.map(c => (
-        <div key={c.id} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative group">
-           <div className="absolute top-4 right-4 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all">
-             <button onClick={() => setEditingClient(c)} className="text-slate-600 hover:text-amber-400"><Edit2 size={16} /></button>
-             <button onClick={() => deleteClientDb(c.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
-           </div>
-           <h4 className="text-white font-bold">{c.name}</h4>
-           <div className="space-y-1 mt-2">
-             <div className="flex items-center space-x-2 text-xs text-amber-400">
-                <ShieldCheck size={12} className="opacity-50" />
-                <span>{c.email}</span>
+      {clients.map(c => {
+        // 🔴 ক্লায়েন্টের প্রজেক্টের নাম খুঁজে বের করা
+        const assignedProject = projects.find(p => p.id === c.projectId);
+        
+        return (
+          <div key={c.id} className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-xl relative group">
+             <div className="absolute top-4 right-4 flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all">
+               <button onClick={() => setEditingClient(c)} className="text-slate-600 hover:text-amber-400"><Edit2 size={16} /></button>
+               <button onClick={() => deleteClientDb(c.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={16} /></button>
              </div>
-             {c.phone && <p className="text-[10px] text-slate-500">{c.phone}</p>}
-             {c.facebookId && (
-                <div className="flex items-center space-x-2 text-[10px] text-blue-400 font-bold">
-                   <Facebook size={10} />
-                   <span>{c.facebookId}</span>
-                </div>
+             <h4 className="text-white font-bold">{c.name}</h4>
+             
+             {/* 🔴 প্রজেক্টের নাম দেখানোর ব্যাজ 🔴 */}
+             {assignedProject && (
+                <span className="inline-block mt-2 px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[9px] font-black uppercase tracking-widest rounded-md">
+                  {assignedProject.name}
+                </span>
              )}
-           </div>
-        </div>
-      ))}
+
+             <div className="space-y-1 mt-3">
+               <div className="flex items-center space-x-2 text-xs text-slate-400">
+                  <ShieldCheck size={12} className="opacity-50 text-amber-400" />
+                  <span>{c.email || 'No email'}</span>
+               </div>
+               {c.phone && <p className="text-[10px] text-slate-500 font-mono">{c.phone}</p>}
+               {c.facebookId && (
+                  <div className="flex items-center space-x-2 text-[10px] text-blue-400 font-bold mt-1">
+                     <Facebook size={10} />
+                     <span>{c.facebookId}</span>
+                  </div>
+               )}
+             </div>
+          </div>
+        );
+      })}
       <button onClick={() => setShowAdd(true)} className="border-2 border-dashed border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-500 hover:border-amber-400 hover:text-amber-400 min-h-[140px]"><Plus size={32} /><span className="font-bold">Add New Client</span></button>
       
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-3xl p-8 w-full max-w-md border border-slate-700 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">New Client</h3>
             <div className="space-y-4">
-               <input placeholder="Client Name" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" onChange={e => setNewClient({...newClient, name: e.target.value})} />
-               <input placeholder="Email" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" onChange={e => setNewClient({...newClient, email: e.target.value})} />
-               <input placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" onChange={e => setNewClient({...newClient, phone: e.target.value})} />
-               <input placeholder="Facebook ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" onChange={e => setNewClient({...newClient, facebookId: e.target.value})} />
-               <div className="flex space-x-3 pt-4"><button onClick={() => setShowAdd(false)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400">Cancel</button><button onClick={() => { if(newClient.name) setClients(prev => [...prev, {...newClient, id: Math.random().toString(36).substr(2, 9)}]); setShowAdd(false); }} className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-bold">Register</button></div>
+               <input placeholder="Client Name" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" onChange={e => setNewClient({...newClient, name: e.target.value})} />
+               <input placeholder="Email" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" onChange={e => setNewClient({...newClient, email: e.target.value})} />
+               <input placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" onChange={e => setNewClient({...newClient, phone: e.target.value})} />
+               <input placeholder="Facebook ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" onChange={e => setNewClient({...newClient, facebookId: e.target.value})} />
+               
+               {/* 🔴 New Client ফর্মে Project Dropdown 🔴 */}
+               <div className="relative">
+                 <select 
+                   value={newClient.projectId || ''} 
+                   onChange={e => setNewClient({...newClient, projectId: e.target.value})} 
+                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-400 outline-none appearance-none cursor-pointer"
+                 >
+                   <option value="">Select Project (Optional)</option>
+                   {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                 </select>
+                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">▼</div>
+               </div>
+
+               <div className="flex space-x-3 pt-4">
+                 <button onClick={() => setShowAdd(false)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400 font-bold text-xs uppercase tracking-widest">Cancel</button>
+                 <button onClick={() => { if(newClient.name) setClients(prev => [...prev, {...newClient, id: Math.random().toString(36).substr(2, 9)} as Client]); setShowAdd(false); }} className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-black text-xs uppercase tracking-widest">Register</button>
+               </div>
             </div>
           </div>
         </div>
       )}
 
       {editingClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-3xl p-8 w-full max-w-md border border-slate-700 shadow-2xl">
             <h3 className="text-2xl font-bold text-white mb-6">Edit Client</h3>
             <form onSubmit={handleEditSubmit} className="space-y-4">
-               <input required placeholder="Client Name" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" value={editingClient.name} onChange={e => setEditingClient({...editingClient, name: e.target.value})} />
-               <input required placeholder="Email" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" value={editingClient.email} onChange={e => setEditingClient({...editingClient, email: e.target.value})} />
-               <input required placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" value={editingClient.phone} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} />
-               <input placeholder="Facebook ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" value={editingClient.facebookId || ''} onChange={e => setEditingClient({...editingClient, facebookId: e.target.value})} />
-               <div className="flex space-x-3 pt-4"><button type="button" onClick={() => setEditingClient(null)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400">Cancel</button><button type="submit" className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-bold">Update</button></div>
+               <input required placeholder="Client Name" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" value={editingClient.name} onChange={e => setEditingClient({...editingClient, name: e.target.value})} />
+               <input required placeholder="Email" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" value={editingClient.email} onChange={e => setEditingClient({...editingClient, email: e.target.value})} />
+               <input required placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" value={editingClient.phone} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} />
+               <input placeholder="Facebook ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" value={editingClient.facebookId || ''} onChange={e => setEditingClient({...editingClient, facebookId: e.target.value})} />
+               
+               {/* 🔴 Edit Client ফর্মে Project Dropdown 🔴 */}
+               <div className="relative">
+                 <select 
+                   value={editingClient.projectId || ''} 
+                   onChange={e => setEditingClient({...editingClient, projectId: e.target.value})} 
+                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-400 outline-none appearance-none cursor-pointer"
+                 >
+                   <option value="">Select Project (Optional)</option>
+                   {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                 </select>
+                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">▼</div>
+               </div>
+
+               <div className="flex space-x-3 pt-4">
+                 <button type="button" onClick={() => setEditingClient(null)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400 font-bold text-xs uppercase tracking-widest">Cancel</button>
+                 <button type="submit" className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-black text-xs uppercase tracking-widest">Update</button>
+               </div>
             </form>
           </div>
         </div>
