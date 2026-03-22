@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { AppState, User, Transaction, Project, Client, Partner, Supplier, Category, Lead, AccountId, InternalTransfer, UserRole, LeadStatus } from './types';
+import { AppState, User, Transaction, Project, Client, Partner, Supplier, Category, Lead, AccountId, InternalTransfer, UserRole, LeadStatus, Material, InventoryLog } from './types';
 import { INITIAL_USERS, INITIAL_PROJECTS, INITIAL_CLIENTS, INITIAL_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_LEADS, INITIAL_ACCOUNTS } from './constants';
 
 const getEnvVar = (key: string): string => {
@@ -31,8 +31,13 @@ interface AppContextType extends AppState {
   deleteClient: (id: string) => Promise<void>;
   updatePartners: (partners: Partner[] | ((prev: Partner[]) => Partner[])) => void;
   deletePartner: (id: string) => Promise<void>;
+  
+  // Supplier & Inventory Functions
   updateSuppliers: (suppliers: Supplier[] | ((prev: Supplier[]) => Supplier[])) => void;
   deleteSupplier: (id: string) => Promise<void>;
+  updateMaterials: (materials: Material[] | ((prev: Material[]) => Material[])) => void;
+  updateInventoryLogs: (logs: InventoryLog[] | ((prev: InventoryLog[]) => InventoryLog[])) => void;
+
   updateLeads: (leads: Lead[] | ((prev: Lead[]) => Lead[])) => void;
   deleteLead: (id: string) => Promise<void>;
   updateCategories: (categories: Category[] | ((prev: Category[]) => Category[])) => void;
@@ -65,6 +70,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [clients, setClients] = useState<Client[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  
+  // New Inventory States
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
+
   const [leads, setLeads] = useState<Lead[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -95,23 +105,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!supabase) {
       setUsers(INITIAL_USERS); setProjects(INITIAL_PROJECTS); setClients(INITIAL_CLIENTS);
       setCategories(INITIAL_CATEGORIES); setTransactions(INITIAL_TRANSACTIONS); setLeads(INITIAL_LEADS);
+      setSuppliers([]); setMaterials([]); setInventoryLogs([]);
       setIsLoading(false); return;
     }
     setIsLoading(true);
     try {
       const fetchOrSeed = async (table: string, fallback: any[]) => {
         const { data, error } = await supabase!.from(table).select('*');
-        if (error) throw error;
+        if (error) {
+           console.warn(`Supabase Error on table ${table}:`, error.message);
+           return fallback;
+        }
         if (!data || data.length === 0) return fallback;
         return data;
       };
-      const [u, p, c, cat, pt, s, l, t, tr] = await Promise.all([
-        fetchOrSeed('users', INITIAL_USERS), fetchOrSeed('projects', INITIAL_PROJECTS), fetchOrSeed('clients', INITIAL_CLIENTS),
-        fetchOrSeed('categories', INITIAL_CATEGORIES), fetchOrSeed('partners', []), fetchOrSeed('suppliers', []),
-        fetchOrSeed('leads', INITIAL_LEADS), fetchOrSeed('transactions', INITIAL_TRANSACTIONS), fetchOrSeed('transfers', [])
+      
+      const [u, p, c, cat, pt, s, mat, logs, l, t, tr] = await Promise.all([
+        fetchOrSeed('users', INITIAL_USERS), 
+        fetchOrSeed('projects', INITIAL_PROJECTS), 
+        fetchOrSeed('clients', INITIAL_CLIENTS),
+        fetchOrSeed('categories', INITIAL_CATEGORIES), 
+        fetchOrSeed('partners', []), 
+        fetchOrSeed('suppliers', []),
+        fetchOrSeed('materials', []), 
+        fetchOrSeed('inventory_logs', []),
+        fetchOrSeed('leads', INITIAL_LEADS), 
+        fetchOrSeed('transactions', INITIAL_TRANSACTIONS), 
+        fetchOrSeed('transfers', [])
       ]);
+      
       setUsers(u); setProjects(p); setClients(c); setCategories(cat); setPartners(pt);
-      setSuppliers(s); setLeads(l); setTransactions(t); setTransfers(tr);
+      setSuppliers(s); setMaterials(mat); setInventoryLogs(logs); 
+      setLeads(l); setTransactions(t); setTransfers(tr);
     } catch (err) { console.error("Cloud Error:", err); } finally { setIsLoading(false); }
   }, []);
 
@@ -123,7 +148,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetStorage('bdt_lead_cats', JSON.stringify(leadCategories));
   }, [currentUser, viewAllMode, leadCategories]);
 
-  // 🔴 syncToCloud ডিফাইন করা হলো (TypeScript Error Fix) 🔴
   const syncToCloud = async (): Promise<boolean> => {
     if (!supabase) return false;
     await fetchCloudData();
@@ -147,7 +171,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTransactions(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // 🔴 সংশোধিত লিডস সেভ ফাংশন: অপ্রয়োজনীয় ফিল্ড বাদ দেওয়া হয়েছে 🔴
   const addLead = useCallback(async (lead: Lead) => {
     const { createdByUserId, source, ...cleanLead } = lead as any;
     if (supabase) {
@@ -200,7 +223,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       projects, updateProjects: genericUpdater('projects', setProjects), deleteProject: genericDeleter('projects', setProjects),
       clients, updateClients: genericUpdater('clients', setClients), deleteClient: genericDeleter('clients', setClients),
       partners, updatePartners: genericUpdater('partners', setPartners), deletePartner: genericDeleter('partners', setPartners),
+      
       suppliers, updateSuppliers: genericUpdater('suppliers', setSuppliers), deleteSupplier: genericDeleter('suppliers', setSuppliers),
+      materials, updateMaterials: genericUpdater('materials', setMaterials), 
+      inventoryLogs, updateInventoryLogs: genericUpdater('inventory_logs', setInventoryLogs),
+
       leads, updateLeads: genericUpdater('leads', setLeads), deleteLead: genericDeleter('leads', setLeads),
       addLead, updateLeadItem,
       categories, updateCategories: genericUpdater('categories', setCategories),

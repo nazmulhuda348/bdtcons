@@ -1,47 +1,24 @@
-
 export enum UserRole {
   ADMIN = 'ADMIN',
   MANAGER = 'MANAGER',
   GUEST = 'GUEST'
 }
 
-export enum LeadStatus {
-  INTERESTED = 'INTERESTED',
-  CONTACTED = 'CONTACTED',
-  CONVERTED = 'CONVERTED',
-  LOST = 'LOST'
-}
-
-export enum LeadSource {
-  FACEBOOK = 'FACEBOOK',
-  REFERRAL = 'REFERRAL',
-  WEB = 'WEB',
-  OTHER = 'OTHER'
-}
-
-export enum AccountId {
-  BANK = 'BANK',
-  HAND_CASH = 'HAND_CASH',
-  PARTNER = 'PARTNER',
-  MANAGER = 'MANAGER'
-}
-
 export interface User {
   id: string;
   username: string;
-  password?: string;
   name: string;
+  password?: string;
   role: UserRole;
-  assignedProjects: string[];
   permissions?: string[];
+  assignedProjects?: string[];
 }
 
 export interface Project {
   id: string;
   name: string;
   serviceMarkup: number;
-  description: string;
-  createdByUserId?: string;
+  description?: string;
 }
 
 export interface Client {
@@ -50,41 +27,26 @@ export interface Client {
   email: string;
   phone: string;
   facebookId?: string;
+  projectId?: string;
 }
 
 export interface Partner {
   id: string;
   name: string;
-  email: string;
   phone: string;
-  joinedDate: string;
-}
-
-export interface Supplier {
-  id: string;
-  name: string;
-  phone: string;
-  material: string;
-  whatsapp?: string;
-}
-
-export interface Lead {
-  id: string;
-  name: string;
-  phone: string;
-  status: LeadStatus;
-  address?: string;
-  profession?: string;
-  facebookId?: string;
-  hobby?: string;
-  category?: string;
-  notes: string;
+  email?: string;
 }
 
 export interface Category {
   id: string;
   name: string;
   type: 'income' | 'expense';
+}
+
+export enum AccountId {
+  BANK = 'BANK',
+  PARTNER = 'PARTNER',
+  MANAGER = 'MANAGER'
 }
 
 export interface Transaction {
@@ -94,13 +56,13 @@ export interface Transaction {
   description: string;
   amount: number;
   categoryId: string;
-  accountId: AccountId; 
-  clientId?: string;
-  partnerId?: string; 
-  attachment?: string;
+  accountId: AccountId;
+  clientId?: string | null;
+  partnerId?: string | null;
   type: 'deposit' | 'expense';
   auditUser: string;
   createdByUserId: string;
+  attachment?: string | null;
 }
 
 export interface InternalTransfer {
@@ -110,7 +72,67 @@ export interface InternalTransfer {
   toAccount: AccountId;
   amount: number;
   note: string;
-  partnerId?: string; 
+  partnerId?: string;
+}
+
+export enum LeadStatus {
+  NEW = 'NEW',
+  CONTACTED = 'CONTACTED',
+  QUALIFIED = 'QUALIFIED',
+  LOST = 'LOST',
+  CONVERTED = 'CONVERTED'
+}
+
+export enum LeadSource {
+  FACEBOOK = 'FACEBOOK',
+  WEBSITE = 'WEBSITE',
+  REFERRAL = 'REFERRAL',
+  MANUAL = 'MANUAL'
+}
+
+export interface Lead {
+  id: string;
+  name: string;
+  phone: string;
+  address?: string;
+  profession?: string;
+  hobby?: string;
+  facebookId?: string;
+  category: string;
+  status?: LeadStatus;
+  source?: LeadSource;
+  createdByUserId?: string;
+}
+
+// ==========================================
+// NEW INVENTORY & SUPPLIER TYPES
+// ==========================================
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+  address?: string;
+  material?: string;
+  whatsapp?: string;
+}
+
+export interface Material {
+  id: string;
+  name: string;
+  unit: string;
+}
+
+export interface InventoryLog {
+  id: string;
+  date: string;
+  projectId: string;
+  materialId: string;
+  type: 'IN' | 'OUT';
+  quantity: number;
+  supplierId?: string;
+  totalCost?: number;
+  note?: string;
+  linkedTransactionId?: string;
 }
 
 export interface AppState {
@@ -120,6 +142,8 @@ export interface AppState {
   clients: Client[];
   partners: Partner[];
   suppliers: Supplier[];
+  materials: Material[];           // Added Material
+  inventoryLogs: InventoryLog[];   // Added Inventory Logs
   leads: Lead[];
   categories: Category[];
   transactions: Transaction[];
