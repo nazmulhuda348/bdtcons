@@ -1,23 +1,38 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Server } = require('socket.io');
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const { Boom } = require('@hapi/boom');
-const fs = require('fs'); // ফাইল সিস্টেম মডিউল (ফোল্ডার ডিলিট করার জন্য)
+const fs = require('fs'); 
 
 const app = express();
-app.use(cors());
+
+// 🔴 ফ্রন্টএন্ড থেকে এক্সেস পাওয়ার জন্য শক্তিশালী CORS হেডার 🔴
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
+    next();
+});
+
+app.use(cors({ origin: "*" })); 
 app.use(express.json({ limit: '200mb' })); 
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+
+// 🔴 সকেট কনফিগারেশনে Polling যুক্ত করা হলো 🔴
+const io = new Server(server, { 
+    cors: { origin: "*", methods: ["GET", "POST"] },
+    transports: ['polling', 'websocket'] 
+});
 
 let sock = null;
 let connectionStatus = 'DISCONNECTED';
 let currentQR = null;
 
-// ফিক্স ১: ডিসকানেক্ট করলে পুরনো ফাইল মুছে ফেলার ফাংশন
 const clearAuthFolder = () => {
     try {
         if (fs.existsSync('./baileys_auth')) {
@@ -30,9 +45,14 @@ const clearAuthFolder = () => {
 };
 
 async function startWhatsApp() {
+    // 🔴 ডায়নামিক ভার্সন ফেচ (WhatsApp যেন কানেকশন রিজেক্ট না করে) 🔴
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`📡 Using WA v${version.join('.')}, isLatest: ${isLatest}`);
+
     const { state, saveCreds } = await useMultiFileAuthState('baileys_auth');
     
     sock = makeWASocket({ 
+        version, // লেটেস্ট ভার্সন বসানো হলো
         auth: state, 
         printQRInTerminal: true,
         browser: ['BDT Enterprise', 'Chrome', '20.0.0'] 
@@ -57,16 +77,26 @@ async function startWhatsApp() {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            const statusCode = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
             connectionStatus = 'DISCONNECTED';
             currentQR = null;
             io.emit('disconnected');
             
             if (shouldReconnect) {
-                startWhatsApp();
+                console.log(`❌ Connection closed. Reconnecting... (Status Code: ${statusCode})`);
+                
+                // 🔴 যদি সার্ভার থেকে রিজেক্ট করে (সেশন করাপ্ট), তবে ফোল্ডার ক্লিন করে রিকানেক্ট করবে 🔴
+                if(statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500) {
+                    clearAuthFolder();
+                }
+                
+                // ক্র্যাশ লুপ ঠেকাতে ৫ সেকেন্ডের গ্যাপ
+                setTimeout(() => startWhatsApp(), 5000); 
             } else {
                 sock = null; 
-                clearAuthFolder(); // সার্ভার লগআউট হলে ফোল্ডার মুছে ফেলবে
+                clearAuthFolder(); 
             }
         }
     });
@@ -86,7 +116,6 @@ app.post('/api/marketing/connect', async (req, res) => {
     res.json({ success: true });
 });
 
-// ফিক্স ২: ডিসকানেক্ট API তে ফোল্ডার মোছার লজিক যুক্ত করা হলো
 app.post('/api/marketing/disconnect', async (req, res) => {
     try {
         if (sock) {
@@ -98,7 +127,7 @@ app.post('/api/marketing/disconnect', async (req, res) => {
     }
     connectionStatus = 'DISCONNECTED';
     currentQR = null;
-    clearAuthFolder(); // একদম ফ্রেশ করে দেবে
+    clearAuthFolder(); 
     res.json({ success: true });
 });
 
@@ -119,7 +148,6 @@ app.post('/api/marketing/send', async (req, res) => {
                 for (let i = 0; i < mediaList.length; i++) {
                     const mediaItem = mediaList[i];
                     
-                    // ফিক্স ৩: Base64 ইমেজ ডিকোড করার পারফেক্ট লজিক
                     const base64Data = mediaItem.data.includes(',') ? mediaItem.data.split(',')[1] : mediaItem.data;
                     const buffer = Buffer.from(base64Data, 'base64');
                     
