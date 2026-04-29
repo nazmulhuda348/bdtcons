@@ -15,6 +15,7 @@ import { MarketingAutomation } from './components/MarketingAutomation';
 import { MoneyDeposit } from './components/MoneyDeposit';
 import { Lock, User as UserIcon, ShieldAlert, Loader2, Database } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { User } from './types'; // 🔴 এই ইমপোর্টটি নতুন যোগ করা হয়েছে 🔴
 
 const LoginPage: React.FC = () => {
   const { users, setCurrentUser, isLoading } = useAppContext();
@@ -32,7 +33,8 @@ const LoginPage: React.FC = () => {
     const cleanInputPassword = password.trim();
 
     // Verify against the cloud-synced user registry
-    const user = users.find(u => u.username.trim().toLowerCase() === cleanInputUsername);
+    // 🔴 এখানে (u: User) দিয়ে টাইপ ফিক্স করা হয়েছে 🔴
+    const user = users.find((u: User) => u.username.trim().toLowerCase() === cleanInputUsername);
 
     if (user && String(user.password).trim() === cleanInputPassword) {
       setCurrentUser(user);
@@ -113,7 +115,7 @@ const MainApp: React.FC = () => {
   const renderContent = () => {
     switch(activeTab) {
       case 'dashboard': return <Dashboard />;
-      case 'deposit': return <MoneyDeposit />; // <--- এই নতুন লাইনটি এখানে যোগ করুন
+      case 'deposit': return <MoneyDeposit />;
       case 'ledger': return <Ledger />;
       case 'treasury': return <CashManagement />;
       case 'partners': return <PartnerManagement />;

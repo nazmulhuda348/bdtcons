@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { AppState, User, Transaction, Project, Client, Partner, Supplier, Category, Lead, AccountId, InternalTransfer, UserRole, LeadStatus, Material, InventoryLog } from './types';
-import { INITIAL_USERS, INITIAL_PROJECTS, INITIAL_CLIENTS, INITIAL_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_LEADS, INITIAL_ACCOUNTS } from './constants';
+import { 
+  AppState, User, Transaction, Project, Client, Partner, Supplier, 
+  Category, Lead, AccountId, InternalTransfer, UserRole, 
+  LeadStatus, Material, InventoryLog, Bank 
+} from './types';
+import { 
+  INITIAL_USERS, INITIAL_PROJECTS, INITIAL_CLIENTS, 
+  INITIAL_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_LEADS, INITIAL_ACCOUNTS 
+} from './constants';
 
 const getEnvVar = (key: string): string => {
   try {
@@ -32,7 +39,9 @@ interface AppContextType extends AppState {
   updatePartners: (partners: Partner[] | ((prev: Partner[]) => Partner[])) => void;
   deletePartner: (id: string) => Promise<void>;
   
-  // Supplier & Inventory Functions
+  updateBanks: (banks: Bank[] | ((prev: Bank[]) => Bank[])) => void;
+  deleteBank: (id: string) => Promise<void>;
+
   updateSuppliers: (suppliers: Supplier[] | ((prev: Supplier[]) => Supplier[])) => void;
   deleteSupplier: (id: string) => Promise<void>;
   updateMaterials: (materials: Material[] | ((prev: Material[]) => Material[])) => void;
@@ -69,9 +78,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  
-  // New Inventory States
   const [materials, setMaterials] = useState<Material[]>([]);
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
 
@@ -105,27 +113,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!supabase) {
       setUsers(INITIAL_USERS); setProjects(INITIAL_PROJECTS); setClients(INITIAL_CLIENTS);
       setCategories(INITIAL_CATEGORIES); setTransactions(INITIAL_TRANSACTIONS); setLeads(INITIAL_LEADS);
-      setSuppliers([]); setMaterials([]); setInventoryLogs([]);
+      setSuppliers([]); setMaterials([]); setInventoryLogs([]); setBanks([]);
       setIsLoading(false); return;
     }
     setIsLoading(true);
     try {
       const fetchOrSeed = async (table: string, fallback: any[]) => {
         const { data, error } = await supabase!.from(table).select('*');
-        if (error) {
-           console.warn(`Supabase Error on table ${table}:`, error.message);
-           return fallback;
-        }
+        if (error) return fallback;
         if (!data || data.length === 0) return fallback;
         return data;
       };
       
-      const [u, p, c, cat, pt, s, mat, logs, l, t, tr] = await Promise.all([
+      const [u, p, c, cat, pt, b, s, mat, logs, l, t, tr] = await Promise.all([
         fetchOrSeed('users', INITIAL_USERS), 
         fetchOrSeed('projects', INITIAL_PROJECTS), 
         fetchOrSeed('clients', INITIAL_CLIENTS),
         fetchOrSeed('categories', INITIAL_CATEGORIES), 
         fetchOrSeed('partners', []), 
+        fetchOrSeed('banks', []),
         fetchOrSeed('suppliers', []),
         fetchOrSeed('materials', []), 
         fetchOrSeed('inventory_logs', []),
@@ -134,7 +140,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fetchOrSeed('transfers', [])
       ]);
       
-      setUsers(u); setProjects(p); setClients(c); setCategories(cat); setPartners(pt);
+      setUsers(u); setProjects(p); setClients(c); setCategories(cat); setPartners(pt); setBanks(b);
       setSuppliers(s); setMaterials(mat); setInventoryLogs(logs); 
       setLeads(l); setTransactions(t); setTransfers(tr);
     } catch (err) { console.error("Cloud Error:", err); } finally { setIsLoading(false); }
@@ -144,6 +150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     safeSetStorage('bdt_current_session', JSON.stringify(currentUser));
+    // Fixed viewAllMode and leadCategories naming
     safeSetStorage('bdt_view_all_mode', JSON.stringify(viewAllMode));
     safeSetStorage('bdt_lead_cats', JSON.stringify(leadCategories));
   }, [currentUser, viewAllMode, leadCategories]);
@@ -173,19 +180,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addLead = useCallback(async (lead: Lead) => {
     const { createdByUserId, source, ...cleanLead } = lead as any;
-    if (supabase) {
-      const { error } = await supabase.from('leads').insert([cleanLead]);
-      if (error) console.error("Database Error:", error.message);
-    }
+    if (supabase) await supabase.from('leads').insert([cleanLead]);
     setLeads(prev => [cleanLead as Lead, ...prev]);
   }, []);
 
   const updateLeadItem = useCallback(async (lead: Lead) => {
     const { createdByUserId, source, ...cleanLead } = lead as any;
-    if (supabase) {
-      const { error } = await supabase.from('leads').update(cleanLead).eq('id', cleanLead.id);
-      if (error) console.error("Database Error:", error.message);
-    }
+    if (supabase) await supabase.from('leads').update(cleanLead).eq('id', cleanLead.id);
     setLeads(prev => prev.map(l => l.id === cleanLead.id ? cleanLead as Lead : l));
   }, []);
 
@@ -204,15 +205,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const accounts = useMemo(() => {
     const totals: Record<AccountId, number> = { ...INITIAL_ACCOUNTS };
-    transactions.forEach(t => { if (t.type === 'deposit') totals[t.accountId] += (t.amount || 0); else totals[t.accountId] -= (t.amount || 0); });
-    transfers.forEach(tf => { totals[tf.fromAccount] -= (tf.amount || 0); totals[tf.toAccount] += (tf.amount || 0); });
+    transactions.forEach(t => { 
+      if (t.accountId in totals) {
+        if (t.type === 'deposit') totals[t.accountId] += (t.amount || 0); 
+        else totals[t.accountId] -= (t.amount || 0); 
+      }
+    });
+    transfers.forEach(tf => { 
+      if (tf.fromAccount in totals) totals[tf.fromAccount] -= (tf.amount || 0); 
+      if (tf.toAccount in totals) totals[tf.toAccount] += (tf.amount || 0); 
+    });
     return totals;
   }, [transactions, transfers]);
 
   const partnerBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     partners.forEach(p => { balances[p.id] = 0; });
-    transactions.forEach(t => { if (t.accountId === AccountId.PARTNER && t.partnerId && balances[t.partnerId] !== undefined) { if (t.type === 'expense') balances[t.partnerId] -= t.amount; else balances[t.partnerId] += t.amount; } });
+    transactions.forEach(t => { 
+      if (t.accountId === AccountId.PARTNER && t.partnerId && balances[t.partnerId] !== undefined) { 
+        if (t.type === 'expense') balances[t.partnerId] -= t.amount; 
+        else balances[t.partnerId] += t.amount; 
+      } 
+    });
     return balances;
   }, [partners, transactions]);
 
@@ -223,11 +237,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       projects, updateProjects: genericUpdater('projects', setProjects), deleteProject: genericDeleter('projects', setProjects),
       clients, updateClients: genericUpdater('clients', setClients), deleteClient: genericDeleter('clients', setClients),
       partners, updatePartners: genericUpdater('partners', setPartners), deletePartner: genericDeleter('partners', setPartners),
-      
+      banks, updateBanks: genericUpdater('banks', setBanks), deleteBank: genericDeleter('banks', setBanks),
       suppliers, updateSuppliers: genericUpdater('suppliers', setSuppliers), deleteSupplier: genericDeleter('suppliers', setSuppliers),
       materials, updateMaterials: genericUpdater('materials', setMaterials), 
       inventoryLogs, updateInventoryLogs: genericUpdater('inventory_logs', setInventoryLogs),
-
       leads, updateLeads: genericUpdater('leads', setLeads), deleteLead: genericDeleter('leads', setLeads),
       addLead, updateLeadItem,
       categories, updateCategories: genericUpdater('categories', setCategories),

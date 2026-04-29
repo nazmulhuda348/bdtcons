@@ -7,6 +7,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+const MotionAside = motion.aside as any;
+
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
@@ -50,7 +54,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       {/* SIDEBAR - DESKTOP & MOBILE DRAWER */}
       <AnimatePresence>
         {(mobileMenuOpen || window.innerWidth >= 768) && (
-          <motion.aside 
+          <MotionAside 
             initial={{ x: -280 }}
             animate={{ x: 0 }}
             exit={{ x: -280 }}
@@ -110,7 +114,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                 </button>
               </div>
             </div>
-          </motion.aside>
+          </MotionAside>
         )}
       </AnimatePresence>
 
@@ -141,7 +145,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
         {/* SCROLLABLE VIEWPORT */}
         <div className="p-4 md:p-8 lg:p-12 overflow-y-auto flex-1 custom-scrollbar">
           <AnimatePresence mode="wait">
-             <motion.div
+             <MotionDiv
                key={activeTab}
                initial={{ opacity: 0, y: 10 }}
                animate={{ opacity: 1, y: 0 }}
@@ -149,14 +153,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                transition={{ duration: 0.2 }}
              >
                {children}
-             </motion.div>
+             </MotionDiv>
           </AnimatePresence>
         </div>
       </main>
 
       {/* MOBILE OVERLAY */}
       {mobileMenuOpen && (
-        <motion.div 
+        <MotionDiv 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

@@ -16,6 +16,10 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { AccountId, Transaction } from '../types';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+const MotionTr = motion.tr as any;
+
 export const SmartSync: React.FC = () => {
   const { addTransaction, projects, categories, clients, selectedProjectId, currentUser } = useAppContext();
   const [inputText, setInputText] = useState('');
@@ -116,7 +120,7 @@ export const SmartSync: React.FC = () => {
   };
 
   return (
-    <motion.div 
+    <MotionDiv 
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       className="max-w-6xl mx-auto space-y-8"
@@ -162,7 +166,7 @@ export const SmartSync: React.FC = () => {
 
             <AnimatePresence>
               {feedback && (
-                <motion.div 
+                <MotionDiv 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
@@ -172,7 +176,7 @@ export const SmartSync: React.FC = () => {
                   <span className="text-[10px] font-bold uppercase tracking-widest">
                     {feedback.error ? 'Buffer Parse Error' : `Successfully committed ${feedback.count} entries`}
                   </span>
-                </motion.div>
+                </MotionDiv>
               )}
             </AnimatePresence>
           </div>
@@ -226,7 +230,7 @@ export const SmartSync: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-700/50">
                     {previewTransactions.map((tx) => (
-                      <motion.tr 
+                      <MotionTr 
                         key={tx.id}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -264,7 +268,7 @@ export const SmartSync: React.FC = () => {
                             <Trash2 size={14} />
                           </button>
                         </td>
-                      </motion.tr>
+                      </MotionTr>
                     ))}
                   </tbody>
                 </table>
@@ -284,6 +288,6 @@ export const SmartSync: React.FC = () => {
           </div>
         </div>
       </div>
-    </motion.div>
+    </MotionDiv>
   );
 };

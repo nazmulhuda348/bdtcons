@@ -1,12 +1,13 @@
-// Fix: Ensured proper method calls on jsPDF instance and correctly invoked autoTable from default export to satisfy TypeScript argument checks.
 import React, { useRef, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { Download, Upload, FileText, Database, Check, AlertCircle, Terminal } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
 import autoTable from 'jspdf-autotable';
 import { motion, AnimatePresence } from 'framer-motion';
 import { INITIAL_CATEGORIES } from '../constants';
+
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
 
 export const Backup: React.FC = () => {
   const { 
@@ -57,11 +58,10 @@ export const Backup: React.FC = () => {
 
   /**
    * REQUISITION: PREMIUM PDF AUDIT GENERATION
-   * Upgraded to a "Midnight & Gold" Forensics aesthetic.
+   * Upgraded to a "Midnight & Gold" Forensics aesthetic with Structural autoTable fix.
    */
   const handlePdfExport = () => {
-    // Fix: Explicitly cast doc to any to allow plugin-injected methods like autoTable
-    const doc = new jsPDF() as any;
+    const doc = new jsPDF();
     const activeProject = projects.find(p => p.id === selectedProjectId);
     const projectName = activeProject ? activeProject.name : 'ENTERPRISE CONSOLIDATED';
     const timestamp = new Date().toLocaleString();
@@ -80,8 +80,7 @@ export const Backup: React.FC = () => {
     // --- BRANDED HEADER ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
-    // Fix: Ensure setTextColor is correctly handled as an any-cast method
-    (doc as any).setTextColor('#0f172a'); // slate-950
+    doc.setTextColor('#0f172a'); // slate-950
     doc.text("FINANCIAL AUDIT REPORT", 14, 25);
     
     doc.setFont('helvetica', 'normal');
@@ -90,7 +89,6 @@ export const Backup: React.FC = () => {
     doc.text("BUILDING DEVELOPMENTS & TECHNOLOGIES", 14, 32);
     
     // Header Divider
-    // Fix: Using hex string for setDrawColor to ensure compatibility
     doc.setDrawColor('#e2e8f0'); // slate-200
     doc.line(14, 38, 196, 38);
 
@@ -172,8 +170,8 @@ export const Backup: React.FC = () => {
     doc.setTextColor('#0f172a');
     doc.text("REVENUE ATTRIBUTION", 14, 115);
 
-    // Fix: Cast doc to any to access the autoTable method injected by the plugin and bypass parameter count checks.
-    (doc as any).autoTable({
+    // Structural execution of autoTable
+    autoTable(doc, {
       startY: 120,
       head: [['SOURCE ENTITY / DEPOSITOR', 'AGGREGATE VALUE']],
       body: incomeRows,
@@ -202,13 +200,14 @@ export const Backup: React.FC = () => {
         `$${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
       ]);
 
+    // Type-safe finalY retrieval
+    const docWithAutoTable = doc as jsPDF & { lastAutoTable?: { finalY: number } };
+    const lastY = docWithAutoTable.lastAutoTable?.finalY || 150;
+    
     doc.setTextColor('#0f172a');
-    // Fix: Safely access lastAutoTable via any-casting to retrieve finalY for vertical spacing.
-    const lastY = (doc as any).lastAutoTable?.finalY || 150;
     doc.text("EXPENDITURE LEDGER", 14, lastY + 15);
 
-    // Fix: Cast doc to any to access the autoTable method injected by the plugin and bypass parameter count checks.
-    (doc as any).autoTable({
+    autoTable(doc, {
       startY: lastY + 20,
       head: [['DATE', 'CATEGORY', 'DESCRIPTION', 'VALUE']],
       body: expenseRows,
@@ -233,9 +232,10 @@ export const Backup: React.FC = () => {
       doc.setPage(i);
       doc.setFontSize(8);
       doc.setTextColor('#94a3b8'); // slate-400
-      // Fix: Use any-cast for internal property access to safely retrieve page dimensions.
-      const pageWidth = (doc as any).internal.pageSize.width || 210;
-      const pageHeight = (doc as any).internal.pageSize.height || 297;
+      
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
       doc.text(
         `Building Developments & Technologies - Proprietary Financial Forensic Audit - Page ${i} of ${pageCount}`,
         pageWidth / 2,
@@ -274,7 +274,7 @@ export const Backup: React.FC = () => {
   };
 
   return (
-    <motion.div 
+    <MotionDiv 
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       className="max-w-4xl mx-auto space-y-8"
@@ -289,7 +289,7 @@ export const Backup: React.FC = () => {
 
       <AnimatePresence>
         {importStatus && (
-          <motion.div 
+          <MotionDiv 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
@@ -297,7 +297,7 @@ export const Backup: React.FC = () => {
           >
             {importStatus.success ? <Check size={24} /> : <AlertCircle size={24} />}
             <span className="text-sm font-bold uppercase tracking-wider">{importStatus.msg}</span>
-          </motion.div>
+          </MotionDiv>
         )}
       </AnimatePresence>
 
@@ -335,6 +335,6 @@ export const Backup: React.FC = () => {
           <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
         </div>
       </div>
-    </motion.div>
+    </MotionDiv>
   );
 };

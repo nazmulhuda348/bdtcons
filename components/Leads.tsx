@@ -2,17 +2,22 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Users, Search, Phone, Facebook, UserCheck, Trash2, Plus, X, 
-  MapPin, Briefcase, Heart, Tag, Edit2, Settings2, Check, AlertCircle, Filter 
+  MapPin, Briefcase, Heart, Tag, Edit2, Settings2, Check, AlertCircle, Filter, AlertTriangle 
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadSource, Client } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '../hooks/usePermissions';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+const MotionTr = motion.tr as any;
+
 export const Leads: React.FC = () => {
   const { 
     allProspects = [], 
     deleteLead, 
-    availableLeadCategories = [] 
+    availableLeadCategories = [],
+    projects = []
   } = useAppContext();
   
   const { isAdmin } = usePermissions();
@@ -23,16 +28,41 @@ export const Leads: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // ডায়নামিক ক্যাটাগরি জেনারেটর (স্মার্ট ফিল্টারিং)
+  const dynamicCategories = useMemo(() => {
+    const leadCats = (allProspects || []).map(l => l.category ? l.category.trim() : 'General').filter(Boolean);
+    const projectNames = (projects || []).map(p => p.name ? p.name.trim() : '');
+    const availableCatsTrimmed = availableLeadCategories.map(c => c.trim());
+    
+    // ডুপ্লিকেট ক্যাটাগরি যেন না আসে
+    const allCats = new Set(['General', 'Registered Client', ...availableCatsTrimmed, ...leadCats, ...projectNames]);
+    return Array.from(allCats).filter(Boolean);
+  }, [allProspects, projects, availableLeadCategories]);
+
+  // ফিল্টার এবং স্টেবল সর্টিং লজিক
   const filteredProspects = useMemo(() => {
     return allProspects.filter(l => {
-      const matchesSearch = (l.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (l.phone || '').includes(searchTerm);
-      const matchesCategory = selectedCategory === 'all' || l.category === selectedCategory;
+      // Search Matching (Case Insensitive)
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = (l.name?.toLowerCase() || '').includes(searchLower) || (l.phone || '').includes(searchLower);
+      
+      // Category Matching (Case Insensitive & Space proof)
+      const leadCategory = l.category && l.category.trim() !== '' ? l.category.trim().toLowerCase() : 'general';
+      const targetCategory = selectedCategory.trim().toLowerCase();
+      
+      const matchesCategory = targetCategory === 'all' || leadCategory === targetCategory;
+      
       return matchesSearch && matchesCategory;
-    }).sort((a, b) => (a.status === LeadStatus.CONVERTED ? 1 : -1));
+    }).sort((a, b) => {
+      // React Safe Stable Sorting: Converted লিডগুলোকে নিচে দেখানোর জন্য
+      if (a.status === LeadStatus.CONVERTED && b.status !== LeadStatus.CONVERTED) return 1;
+      if (a.status !== LeadStatus.CONVERTED && b.status === LeadStatus.CONVERTED) return -1;
+      return 0;
+    });
   }, [allProspects, searchTerm, selectedCategory]);
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+    <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-black text-white tracking-tight italic uppercase">Lead Pipeline</h2>
@@ -58,7 +88,7 @@ export const Leads: React.FC = () => {
             <div className="absolute left-5 top-1/2 -translate-y-1/2 text-amber-400"><Filter size={18} /></div>
             <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full bg-slate-950/50 border border-slate-700 rounded-2xl py-4 pl-14 pr-10 text-sm text-white focus:ring-4 focus:ring-amber-400/10 outline-none font-bold appearance-none cursor-pointer">
               <option value="all">All Segments / Projects</option>
-              {availableLeadCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+              {dynamicCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
             </select>
           </div>
         </div>
@@ -77,7 +107,7 @@ export const Leads: React.FC = () => {
             <tbody className="divide-y divide-slate-700/50">
               <AnimatePresence mode="popLayout">
                 {filteredProspects.map((lead) => (
-                  <motion.tr key={lead.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-slate-700/10 transition-colors group">
+                  <MotionTr key={lead.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-slate-700/10 transition-colors group">
                     <td className="px-6 py-6">
                       <div className="flex flex-col">
                         <span className="text-white font-bold text-sm mb-0.5">{lead.name}</span>
@@ -86,7 +116,11 @@ export const Leads: React.FC = () => {
                         {lead.id.startsWith('sync_') && <span className="w-fit text-[7px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 uppercase font-black mt-1.5">Registry</span>}
                       </div>
                     </td>
-                    <td className="px-6 py-6"><span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-700/50 border border-slate-600 text-amber-400 text-[9px] font-black uppercase">{lead.category || 'General'}</span></td>
+                    <td className="px-6 py-6">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-black uppercase ${lead.id.startsWith('sync_') ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400' : 'bg-slate-700/50 border border-slate-600 text-amber-400'}`}>
+                        {lead.category || 'General'}
+                      </span>
+                    </td>
                     <td className="px-6 py-6">
                       <div className="flex flex-col space-y-1 text-xs">
                         <div className="flex items-center space-x-2 text-slate-300"><Briefcase size={12} className="text-slate-500" /><span>{lead.profession || '-'}</span></div>
@@ -102,7 +136,7 @@ export const Leads: React.FC = () => {
                           </div>
                        )}
                     </td>
-                  </motion.tr>
+                  </MotionTr>
                 ))}
               </AnimatePresence>
             </tbody>
@@ -114,13 +148,34 @@ export const Leads: React.FC = () => {
         {showAddModal && <LeadModal onClose={() => setShowAddModal(false)} />}
         {editingLead && <LeadModal editData={editingLead} onClose={() => setEditingLead(null)} />}
         {showCatModal && <CategoryManagerModal onClose={() => setShowCatModal(false)} />}
+        
+        {/* Delete Confirmation Modal */}
+        {confirmDeleteId && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <MotionDiv 
+              initial={{ scale: 0.95, opacity: 0 }} 
+              animate={{ scale: 1, opacity: 1 }} 
+              className="bg-slate-800 border border-red-500/20 w-full max-w-md rounded-3xl p-8 shadow-2xl text-center"
+            >
+              <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertTriangle size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Delete Lead?</h3>
+              <p className="text-slate-400 text-sm mb-8">Are you sure you want to delete this lead? This action cannot be undone.</p>
+              <div className="flex gap-4">
+                <button onClick={() => setConfirmDeleteId(null)} className="flex-1 py-4 bg-slate-900 text-slate-300 font-bold rounded-2xl uppercase text-[10px] tracking-widest border border-slate-700">Cancel</button>
+                <button onClick={() => { deleteLead(confirmDeleteId); setConfirmDeleteId(null); }} className="flex-1 py-4 bg-red-500 text-white font-bold rounded-2xl uppercase text-[10px] tracking-widest">Confirm Delete</button>
+              </div>
+            </MotionDiv>
+          </div>
+        )}
       </AnimatePresence>
-    </motion.div>
+    </MotionDiv>
   );
 };
 
 const CategoryManagerModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { leadCategories = [], updateLeadCategories, projects = [] } = useAppContext();
+  const { leadCategories = [], updateLeadCategories } = useAppContext();
   const [newCat, setNewCat] = useState('');
   const add = () => { if (newCat.trim()) { updateLeadCategories(prev => [...prev, newCat.trim()]); setNewCat(''); } };
 
@@ -147,14 +202,26 @@ const CategoryManagerModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
 };
 
 const LeadModal: React.FC<{ onClose: () => void, editData?: Lead }> = ({ onClose, editData }) => {
-  const { addLead, updateLeadItem, leads, availableLeadCategories = [] } = useAppContext();
+  const { addLead, updateLeadItem, availableLeadCategories = [], allProspects = [], projects = [] } = useAppContext();
   const [form, setForm] = useState<Partial<Lead>>(editData || { name: '', phone: '', address: '', profession: '', facebookId: '', hobby: '', category: 'General' });
+
+  const dynamicCategories = useMemo(() => {
+    const leadCats = (allProspects || []).map(l => l.category ? l.category.trim() : 'General').filter(Boolean);
+    const projectNames = (projects || []).map(p => p.name ? p.name.trim() : '');
+    const availableCatsTrimmed = availableLeadCategories.map(c => c.trim());
+    
+    const allCats = new Set(['General', ...availableCatsTrimmed, ...leadCats, ...projectNames]);
+    return Array.from(allCats).filter(Boolean);
+  }, [allProspects, projects, availableLeadCategories]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.phone) return alert('Name and Phone are mandatory.');
-    if (editData) { await updateLeadItem({ ...editData, ...form } as Lead); }
-    else { await addLead({ id: `L_${Date.now()}`, ...form } as Lead); }
+    
+    const cleanForm = { ...form, category: form.category ? form.category.trim() : 'General' };
+
+    if (editData) { await updateLeadItem({ ...editData, ...cleanForm } as Lead); }
+    else { await addLead({ id: `L_${Date.now()}`, ...cleanForm } as Lead); }
     onClose();
   };
 
@@ -169,7 +236,7 @@ const LeadModal: React.FC<{ onClose: () => void, editData?: Lead }> = ({ onClose
             <input required placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-5 py-4 text-white font-mono" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
           </div>
           <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-5 py-4 text-white font-bold appearance-none cursor-pointer" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
-             {availableLeadCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+             {dynamicCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
           </select>
           <input placeholder="Address" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-5 py-4 text-white" value={form.address || ''} onChange={e => setForm({...form, address: e.target.value})} />
           <div className="grid grid-cols-2 gap-5">

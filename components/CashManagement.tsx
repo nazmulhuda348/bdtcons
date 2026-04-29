@@ -1,240 +1,256 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
-  Building2, 
-  Wallet, 
-  Users, 
-  UserCheck, 
-  ArrowRightLeft, 
-  Check, 
-  History,
-  TrendingUp,
-  TrendingDown
+  Building2, Wallet, Users, UserCheck, ArrowRightLeft, 
+  Check, History, Landmark, Plus, Trash2, CreditCard 
 } from 'lucide-react';
-import { AccountId, InternalTransfer } from '../types';
+import { AccountId, InternalTransfer, Bank } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+
 export const CashManagement: React.FC = () => {
-  const { accounts, transfers, transferCash, partners } = useAppContext();
+  const { accounts, transfers, transferCash, partners, banks, updateBanks, deleteBank } = useAppContext();
+  
+  // ব্যাংক রেজিস্ট্রি করার জন্য নতুন স্টেট
+  const [newBankName, setNewBankName] = useState('');
+  const [newBankAccount, setNewBankAccount] = useState('');
+  
   const [transferForm, setTransferForm] = useState({
     from: AccountId.BANK,
     to: AccountId.PARTNER,
+    fromBankId: '', // From Node এর জন্য ব্যাংক
+    toBankId: '',   // To Node এর জন্য ব্যাংক
     amount: '',
     note: '',
     partnerId: '',
     date: new Date().toISOString().split('T')[0]
   });
 
-  const handleTransfer = (e: React.FormEvent) => {
+  const handleAddBank = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBankName.trim()) return;
+    
+    // নতুন ব্যাংক অবজেক্টে অ্যাকাউন্ট নাম্বার সহ সেভ করা হচ্ছে
+    const newBank: Bank = { 
+      id: `b_${Date.now()}`, 
+      name: newBankName.trim(),
+      accountNumber: newBankAccount.trim() || undefined
+    };
+    
+    await updateBanks([...banks, newBank]);
+    setNewBankName('');
+    setNewBankAccount('');
+  };
+
+  const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(transferForm.amount);
     if (isNaN(amount) || amount <= 0) return alert('Invalid amount');
-    if (transferForm.from === transferForm.to) return alert('Cannot transfer to same account');
-    
+
+    // ভ্যালিডেশন: ব্যাংক সিলেক্ট করা হয়েছে কি না চেক করা
+    if (transferForm.from === AccountId.BANK && !transferForm.fromBankId) return alert('Please select the Source Bank.');
+    if (transferForm.to === AccountId.BANK && !transferForm.toBankId) return alert('Please select the Destination Bank.');
+    if (transferForm.from === AccountId.PARTNER && !transferForm.partnerId) return alert('Please select a Partner.');
+    if (transferForm.to === AccountId.PARTNER && !transferForm.partnerId) return alert('Please select a Partner.');
+
+    // কোন ব্যাংক সিলেক্ট করা হয়েছে তা বের করা
+    const fromBank = banks.find(b => b.id === transferForm.fromBankId);
+    const toBank = banks.find(b => b.id === transferForm.toBankId);
+
+    // নোটের সাথে ব্যাংকের নাম যুক্ত করা (যাতে ডাটাবেস এরর না আসে এবং হিস্ট্রি ট্র্যাক করা যায়)
+    let enhancedNote = transferForm.note || 'Internal Operational Transfer';
+    if (transferForm.from === AccountId.BANK || transferForm.to === AccountId.BANK) {
+      const fromStr = transferForm.from === AccountId.BANK ? (fromBank?.name || 'Bank') : transferForm.from;
+      const toStr = transferForm.to === AccountId.BANK ? (toBank?.name || 'Bank') : transferForm.to;
+      enhancedNote = `[${fromStr} ➡️ ${toStr}] ${transferForm.note}`;
+    }
+
     const newTransfer: InternalTransfer = {
       id: Math.random().toString(36).substr(2, 9),
       date: transferForm.date,
       fromAccount: transferForm.from,
       toAccount: transferForm.to,
       amount,
-      note: transferForm.note || 'Internal Operational Transfer',
-      // Explicitly send null for optional FKs to satisfy DB constraints
+      note: enhancedNote,
       partnerId: transferForm.partnerId === "" ? undefined : transferForm.partnerId 
     };
 
-    transferCash(newTransfer);
-    setTransferForm({ ...transferForm, amount: '', note: '', partnerId: '' });
+    await transferCash(newTransfer);
+    
+    // ফর্ম রিসেট
+    setTransferForm({ 
+      ...transferForm, 
+      amount: '', 
+      note: '', 
+      partnerId: '', 
+      fromBankId: '', 
+      toBankId: '' 
+    });
   };
 
-  const accountCards = [
-    { id: AccountId.BANK, label: 'Bank Account', icon: Building2, color: 'from-blue-500/20 to-indigo-500/20', accent: 'text-blue-400' },
-    { id: AccountId.PARTNER, label: 'Partner Ledger', icon: Users, color: 'from-amber-500/20 to-orange-500/20', accent: 'text-amber-400' },
-    { id: AccountId.MANAGER, label: 'Manager Fund', icon: UserCheck, color: 'from-purple-500/20 to-pink-500/20', accent: 'text-purple-400' },
-  ];
-
-  const showPartnerSelect = transferForm.to === AccountId.PARTNER || transferForm.from === AccountId.PARTNER;
-
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-12"
-    >
-      <div>
-        <h2 className="text-3xl font-bold font-outfit text-white tracking-tight">Enterprise Treasury</h2>
-        <p className="text-sm text-slate-500">Liquidity management and internal pipeline movements</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {accountCards.map((acc) => (
-          <motion.div 
-            key={acc.id}
-            whileHover={{ y: -5 }}
-            className={`relative p-8 rounded-[2rem] border border-slate-700 bg-gradient-to-br ${acc.color} backdrop-blur-xl shadow-2xl overflow-hidden group`}
-          >
-             <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                <acc.icon size={120} />
-             </div>
-             <div className="flex items-center space-x-4 mb-6">
-                <div className={`p-3 rounded-2xl bg-slate-900/50 ${acc.accent}`}>
-                   <acc.icon size={24} />
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{acc.label}</span>
-             </div>
-             <div className="space-y-1">
-                <p className="text-3xl font-black text-white font-outfit">
-                  ${(accounts[acc.id] || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
-                <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-400">
-                   <TrendingUp size={10} />
-                   <span>Liquidity Stable</span>
-                </div>
-             </div>
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl h-full">
-            <div className="flex items-center space-x-4 mb-8">
-               <div className="p-3 bg-amber-400/10 rounded-2xl">
-                  <ArrowRightLeft className="text-amber-400" size={24} />
-               </div>
-               <h3 className="text-xl font-bold text-white font-outfit">Pipeline Movement</h3>
-            </div>
-            
-            <form onSubmit={handleTransfer} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Movement Date</label>
-                <input 
-                  type="date" required 
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all"
-                  value={transferForm.date}
-                  onChange={e => setTransferForm({ ...transferForm, date: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Source Node</label>
-                <select 
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all"
-                  value={transferForm.from}
-                  onChange={e => setTransferForm({ ...transferForm, from: e.target.value as AccountId })}
-                >
-                  {accountCards.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Destination Node</label>
-                <select 
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all"
-                  value={transferForm.to}
-                  onChange={e => setTransferForm({ ...transferForm, to: e.target.value as AccountId })}
-                >
-                  {accountCards.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-                </select>
-              </div>
-
-              {showPartnerSelect && (
-                <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Stakeholder Attribution</label>
-                  <select 
-                    required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all"
-                    value={transferForm.partnerId}
-                    onChange={e => setTransferForm({ ...transferForm, partnerId: e.target.value })}
-                  >
-                    <option value="">Select Partner</option>
-                    {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Transfer Amount ($)</label>
-                <input 
-                  type="number" step="0.01" required 
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-outfit text-xl focus:ring-2 focus:ring-amber-400 outline-none transition-all"
-                  placeholder="0.00"
-                  value={transferForm.amount}
-                  onChange={e => setTransferForm({ ...transferForm, amount: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Audit Note</label>
-                <input 
-                  type="text"
-                  placeholder="Internal audit memo..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white text-sm focus:ring-2 focus:ring-amber-400 outline-none transition-all"
-                  value={transferForm.note}
-                  onChange={e => setTransferForm({ ...transferForm, note: e.target.value })}
-                />
-              </div>
-
-              <button 
-                type="submit"
-                className="w-full bg-amber-400 text-slate-900 font-black py-5 rounded-2xl hover:bg-amber-500 transition-all shadow-xl shadow-amber-400/20 text-xs uppercase tracking-widest flex items-center justify-center space-x-2"
-              >
-                <Check size={18} />
-                <span>Execute Movement</span>
-              </button>
-            </form>
-          </div>
+    <MotionDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-12">
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-3xl font-bold font-outfit text-white tracking-tight">Enterprise Treasury</h2>
+          <p className="text-sm text-slate-500">Liquidity and node fund movements</p>
         </div>
+      </div>
 
-        <div className="lg:col-span-2">
-          <div className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl flex flex-col h-full overflow-hidden">
-            <div className="flex items-center space-x-4 mb-8">
-               <div className="p-3 bg-blue-400/10 rounded-2xl">
-                  <History className="text-blue-400" size={24} />
-               </div>
-               <h3 className="text-xl font-bold text-white font-outfit">Movement Audit</h3>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-              {transfers.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-600">
-                   <ArrowRightLeft size={48} className="mb-4 opacity-10" />
-                   <p className="text-sm font-medium italic">No internal fund movements recorded</p>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* ==========================================
+            ব্যাংক রেজিস্ট্রি সেকশন
+        ========================================== */}
+        <div className="lg:col-span-4 bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl">
+           <div className="flex items-center space-x-4 mb-8">
+              <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-400">
+                 <Landmark size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-white font-outfit">Bank Registry</h3>
+           </div>
+           
+           <form onSubmit={handleAddBank} className="space-y-3 mb-8">
+              <input 
+                required placeholder="Bank Name (e.g. DBBL)" 
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-amber-400"
+                value={newBankName} onChange={e => setNewBankName(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <input 
+                  placeholder="A/C Number (Optional)" 
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-amber-400 font-mono"
+                  value={newBankAccount} onChange={e => setNewBankAccount(e.target.value)}
+                />
+                <button type="submit" className="bg-amber-400 text-slate-900 px-5 rounded-xl hover:bg-amber-500 transition-all shadow-lg shadow-amber-400/10 font-bold uppercase text-xs">
+                  Add
+                </button>
+              </div>
+           </form>
+
+           <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+              {banks.length === 0 ? (
+                <div className="text-center py-10 opacity-20">
+                   <Building2 size={48} className="mx-auto mb-2" />
+                   <p className="text-[10px] font-black uppercase">No Banks Registered</p>
                 </div>
               ) : (
-                transfers.map((t) => (
-                  <div key={t.id} className="bg-slate-900/50 border border-slate-700 p-6 rounded-2xl flex items-center justify-between">
-                     <div className="flex items-center space-x-6">
-                        <div className="flex flex-col items-center">
-                           <span className="text-[8px] font-black uppercase text-slate-600 mb-1">{t.fromAccount}</span>
-                           <div className="w-10 h-10 rounded-xl bg-red-400/10 text-red-400 flex items-center justify-center">
-                              <TrendingDown size={18} />
-                           </div>
-                        </div>
-                        <div className="h-px w-8 bg-slate-700" />
-                        <div className="flex flex-col items-center">
-                           <span className="text-[8px] font-black uppercase text-slate-600 mb-1">{t.toAccount}</span>
-                           <div className="w-10 h-10 rounded-xl bg-emerald-400/10 text-emerald-400 flex items-center justify-center">
-                              <TrendingUp size={18} />
-                           </div>
-                        </div>
-                        <div className="flex flex-col">
-                           <span className="text-sm font-bold text-white">
-                             {t.note}
-                             {t.partnerId && <span className="ml-2 text-[10px] text-amber-400 font-black uppercase tracking-widest">Stakeholder: {partners.find(p => p.id === t.partnerId)?.name}</span>}
-                           </span>
-                           <span className="text-[10px] text-slate-500 font-mono">{new Date(t.date).toLocaleString()}</span>
-                        </div>
-                     </div>
-                     <div className="text-xl font-black text-white font-outfit">
-                        ${t.amount.toLocaleString()}
-                     </div>
+                banks.map(bank => (
+                  <div key={bank.id} className="flex flex-col bg-slate-900/50 p-4 rounded-2xl border border-slate-700 relative group">
+                     <span className="text-sm font-bold text-slate-200">{bank.name}</span>
+                     {bank.accountNumber && (
+                       <span className="text-[10px] text-slate-500 font-mono mt-1 flex items-center gap-1">
+                         <CreditCard size={10}/> {bank.accountNumber}
+                       </span>
+                     )}
+                     <button onClick={() => deleteBank(bank.id)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+                        <Trash2 size={16} />
+                     </button>
                   </div>
                 ))
               )}
-            </div>
+           </div>
+        </div>
+
+        {/* ==========================================
+            ইন্টারনাল ট্রান্সফার সেকশন
+        ========================================== */}
+        <div className="lg:col-span-8 bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl">
+          <div className="flex items-center space-x-4 mb-8">
+             <div className="p-3 bg-amber-400/10 rounded-2xl text-amber-400">
+                <ArrowRightLeft size={24} />
+             </div>
+             <h3 className="text-xl font-bold text-white font-outfit">Internal Pipeline</h3>
           </div>
+          
+          <form onSubmit={handleTransfer} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900/30 p-6 rounded-3xl border border-slate-700/50">
+               
+               {/* From Node Section */}
+               <div className="space-y-3">
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">From Node (উৎস)</label>
+                   <select className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.from} onChange={e => setTransferForm({...transferForm, from: e.target.value as AccountId, fromBankId: ''})}>
+                      <option value={AccountId.BANK}>Central Bank</option>
+                      <option value={AccountId.MANAGER}>Manager Fund</option>
+                      <option value={AccountId.PARTNER}>Partner Stakeholder</option>
+                   </select>
+                 </div>
+                 {/* From Node Bank Dropdown */}
+                 {transferForm.from === AccountId.BANK && (
+                   <MotionDiv initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                     <label className="text-[9px] font-black text-amber-400 uppercase tracking-widest ml-1 mb-1 block">Select Source Bank</label>
+                     <select required className="w-full bg-slate-950 border border-amber-400/30 rounded-2xl px-5 py-3 text-white font-bold outline-none" value={transferForm.fromBankId} onChange={e => setTransferForm({...transferForm, fromBankId: e.target.value})}>
+                        <option value="">-- Choose Bank --</option>
+                        {banks.map(b => (
+                          <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>
+                        ))}
+                     </select>
+                   </MotionDiv>
+                 )}
+               </div>
+
+               {/* To Node Section */}
+               <div className="space-y-3">
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">To Node (গন্তব্য)</label>
+                   <select className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.to} onChange={e => setTransferForm({...transferForm, to: e.target.value as AccountId, toBankId: ''})}>
+                      <option value={AccountId.BANK}>Central Bank</option>
+                      <option value={AccountId.MANAGER}>Manager Fund</option>
+                      <option value={AccountId.PARTNER}>Partner Stakeholder</option>
+                   </select>
+                 </div>
+                 {/* To Node Bank Dropdown */}
+                 {transferForm.to === AccountId.BANK && (
+                   <MotionDiv initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                     <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest ml-1 mb-1 block">Select Destination Bank</label>
+                     <select required className="w-full bg-slate-950 border border-emerald-400/30 rounded-2xl px-5 py-3 text-white font-bold outline-none" value={transferForm.toBankId} onChange={e => setTransferForm({...transferForm, toBankId: e.target.value})}>
+                        <option value="">-- Choose Bank --</option>
+                        {banks.map(b => (
+                          <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>
+                        ))}
+                     </select>
+                   </MotionDiv>
+                 )}
+               </div>
+
+            </div>
+
+            {/* Partner Selection (If required) */}
+            { (transferForm.from === AccountId.PARTNER || transferForm.to === AccountId.PARTNER) && (
+              <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
+                <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest ml-1">Attributed Partner (পার্টনারের নাম)</label>
+                <select required className="w-full bg-slate-900 border border-amber-400/20 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.partnerId} onChange={e => setTransferForm({...transferForm, partnerId: e.target.value})}>
+                   <option value="">-- Choose Partner --</option>
+                   {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </MotionDiv>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Transfer Amount ($)</label>
+                 <input required type="number" step="0.01" className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-black text-lg outline-none focus:border-amber-400" value={transferForm.amount} onChange={e => setTransferForm({...transferForm, amount: e.target.value})} />
+               </div>
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Date</label>
+                 <input required type="date" className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:border-amber-400" value={transferForm.date} onChange={e => setTransferForm({...transferForm, date: e.target.value})} />
+               </div>
+            </div>
+
+            <div className="space-y-2">
+               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Internal Note / Memo</label>
+               <input type="text" placeholder="Audit memo..." className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:border-amber-400" value={transferForm.note} onChange={e => setTransferForm({...transferForm, note: e.target.value})} />
+            </div>
+
+            <button type="submit" className="w-full bg-amber-400 text-slate-950 font-black py-5 rounded-2xl uppercase text-xs tracking-widest shadow-xl shadow-amber-400/20 hover:bg-amber-300 transition-all flex items-center justify-center gap-3 mt-4">
+               <Check size={18} />
+               <span>Execute Fund Movement</span>
+            </button>
+          </form>
         </div>
       </div>
-    </motion.div>
+    </MotionDiv>
   );
 };

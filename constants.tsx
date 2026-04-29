@@ -1,4 +1,3 @@
-
 import { UserRole, Project, User, Client, Category, Transaction, Lead, LeadStatus, LeadSource, AccountId } from './types';
 
 export const INITIAL_PROJECTS: Project[] = [
@@ -18,8 +17,8 @@ export const INITIAL_CLIENTS: Client[] = [
 ];
 
 export const INITIAL_LEADS: Lead[] = [
-  { id: 'L1', name: 'Global Tech Ltd', phone: '555-8888', status: LeadStatus.INTERESTED, source: LeadSource.WEB, notes: 'Interested in Skyrise Phase 2' },
-  { id: 'L2', name: 'Marcus Anderson', phone: '555-9922', status: LeadStatus.CONTACTED, source: LeadSource.REFERRAL, notes: 'Follow up regarding local permits' },
+  { id: 'L1', name: 'Global Tech Ltd', phone: '555-8888', status: LeadStatus.NEW, source: LeadSource.WEBSITE, category: 'General' },
+  { id: 'L2', name: 'Marcus Anderson', phone: '555-9922', status: LeadStatus.CONTACTED, source: LeadSource.REFERRAL, category: 'General' },
 ];
 
 export const INITIAL_CATEGORIES: Category[] = [
@@ -32,13 +31,11 @@ export const INITIAL_CATEGORIES: Category[] = [
 
 export const INITIAL_ACCOUNTS: Record<AccountId, number> = {
   [AccountId.BANK]: 0,
-  [AccountId.HAND_CASH]: 0,
   [AccountId.PARTNER]: 0,
   [AccountId.MANAGER]: 0,
 };
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
-  // Added createdByUserId to ensure compliance with Transaction type
   { id: 't1', projectId: 'p1', date: '2024-01-15', description: 'Initial Project Deposit', amount: 50000, categoryId: 'cat1', accountId: AccountId.BANK, type: 'deposit', auditUser: 'Lead Admin', createdByUserId: 'u1' },
   { id: 't2', projectId: 'p1', date: '2024-01-20', description: 'Concrete purchase', amount: 12000, categoryId: 'cat2', accountId: AccountId.BANK, type: 'expense', auditUser: 'John Manager', createdByUserId: 'u2' },
   { id: 't3', projectId: 'p2', date: '2024-02-05', description: 'Government Grant', amount: 100000, categoryId: 'cat1', accountId: AccountId.BANK, type: 'deposit', auditUser: 'Lead Admin', createdByUserId: 'u1' },

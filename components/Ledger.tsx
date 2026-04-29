@@ -2,15 +2,19 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Search, Plus, Image as ImageIcon, Trash2, X, ChevronLeft, ChevronRight, 
-  Tag, Edit2, ArrowUpRight, ArrowDownRight, Check, Loader2, AlertTriangle, UserPlus, FolderPlus
+  Tag, Edit2, ArrowUpRight, ArrowDownRight, Check, Loader2, AlertTriangle, 
+  UserPlus, FolderPlus, Wallet, Landmark, Users
 } from 'lucide-react';
-import { UserRole, Transaction, AccountId, Category, Client } from '../types';
+import { UserRole, Transaction, AccountId, Category, Client, Bank, Partner } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SecurityToggle } from './SecurityToggle';
 import { usePermissions } from '../hooks/usePermissions';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+
 export const Ledger: React.FC = () => {
-  const { transactions, deleteTransaction, selectedProjectId, projects, categories, clients, currentUser, viewAllMode } = useAppContext();
+  const { transactions, deleteTransaction, selectedProjectId, projects, categories, clients, banks, partners, currentUser, viewAllMode } = useAppContext();
   
   const { isAdmin, hasPermission } = usePermissions();
   
@@ -22,7 +26,7 @@ export const Ledger: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const getClientName = (clientId?: any, type?: 'deposit' | 'expense') => {
+  const getClientName = (clientId?: string | null, type?: 'deposit' | 'expense') => {
     const cidStr = String(clientId || '');
     if (!cidStr || cidStr === 'undefined' || cidStr === 'null' || cidStr.trim() === '') {
       return type === 'deposit' ? 'INTERNAL REVENUE' : 'GENERAL PAYEE';
@@ -68,7 +72,6 @@ export const Ledger: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 md:space-x-3 w-full lg:w-auto">
           <SecurityToggle />
           
-          {/* পারমিশন চেক: 'add_ledger' থাকলেই শুধু এন্ট্রি বাটনগুলো দেখাবে */}
           {hasPermission('add_ledger') && (
             <div className="flex flex-1 md:flex-none gap-2">
               <button onClick={() => { setInitialType('deposit'); setShowAddModal(true); }} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-500 text-slate-950 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all hover:bg-emerald-400"><ArrowUpRight size={18}/><span>Deposit</span></button>
@@ -80,7 +83,7 @@ export const Ledger: React.FC = () => {
 
       <div className="bg-slate-800 rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col min-h-[600px]">
         <div className="p-4 bg-slate-900/30 border-b border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="relative w-full max-w-sm">
+          <div className="relative w-full max-sm:max-w-none max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
             <input type="text" placeholder="Search entries..." className="w-full bg-slate-950/50 border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-sm text-white outline-none focus:ring-1 focus:ring-amber-400" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
@@ -98,7 +101,7 @@ export const Ledger: React.FC = () => {
               <tr className="bg-slate-900/50 text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-700">
                 <th className="px-6 py-5">Date</th>
                 <th className="px-6 py-5">Entity / Description</th>
-                <th className="px-6 py-5 text-center">Node</th>
+                <th className="px-6 py-5 text-center">Fund Source</th>
                 <th className="px-6 py-5 text-right">Impact</th>
                 <th className="px-6 py-5 text-center">Action</th>
               </tr>
@@ -118,13 +121,32 @@ export const Ledger: React.FC = () => {
                         </span>
                         <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider flex items-center gap-1">
                           <span className="w-1 h-1 rounded-full bg-slate-700" />
-                          Created by {t.auditUser || 'System'}
+                          By {t.auditUser || 'System'}
                         </span>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-6 text-center">
-                    <span className="px-2 py-1 rounded bg-slate-950 text-[9px] font-black text-amber-400 uppercase tracking-widest">{t.accountId}</span>
+                    <div className="flex flex-col items-center gap-1">
+                       <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter border ${t.accountId === AccountId.BANK ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : t.accountId === AccountId.MANAGER ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                         {t.accountId}
+                       </span>
+                       
+                       {/* 🔴 লেজার টেবিলে ব্যাংক ও অ্যাকাউন্ট নাম্বার দেখানোর লজিক */}
+                       {t.accountId === AccountId.BANK && t.bankId && (
+                         <span className="text-[8px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-1 text-center whitespace-nowrap">
+                           <Landmark size={10} /> 
+                           {banks?.find(b => b.id === t.bankId)?.name || 'Bank'} 
+                           {banks?.find(b => b.id === t.bankId)?.accountNumber ? ` (${banks?.find(b => b.id === t.bankId)?.accountNumber})` : ''}
+                         </span>
+                       )}
+
+                       {t.accountId === AccountId.PARTNER && t.partnerId && (
+                         <span className="text-[8px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-1">
+                           <Users size={10} /> {partners?.find(p => p.id === t.partnerId)?.name || 'Partner'}
+                         </span>
+                       )}
+                    </div>
                   </td>
                   <td className={`px-6 py-6 text-right font-black font-outfit text-lg ${t.type === 'deposit' ? 'text-emerald-400' : 'text-slate-200'}`}>
                     {t.type === 'expense' ? '-' : '+'}${Number(t.amount || 0).toLocaleString()}
@@ -133,13 +155,14 @@ export const Ledger: React.FC = () => {
                     <div className="flex items-center justify-center space-x-2">
                       {t.attachment && <button onClick={() => setViewingAttachment(t.attachment!)} className="p-2 text-slate-500 hover:text-amber-400 transition-all"><ImageIcon size={16} /></button>}
                       
-                      {/* পারমিশন চেক: edit_ledger (সাথে এটাও চেক করা হবে যে এই ইউজারই এন্ট্রিটি করেছে কিনা) */}
+                      {/* EDIT BUTTON */}
                       {(isAdmin || (hasPermission('edit_ledger') && t.createdByUserId === currentUser?.id)) && (
-                        <button onClick={() => setEditingTransaction(t)} className="p-2 text-slate-500 hover:text-white transition-all">
+                        <button onClick={() => setEditingTransaction(t)} className="p-2 text-slate-500 hover:text-blue-400 transition-all">
                           <Edit2 size={16}/>
                         </button>
                       )}
-
+                      
+                      {/* DELETE BUTTON */}
                       {isAdmin && (
                         <button onClick={() => deleteTransaction(t.id)} className="p-2 text-slate-500 hover:text-red-500 transition-all">
                           <Trash2 size={16}/>
@@ -173,7 +196,6 @@ export const Ledger: React.FC = () => {
                   {pageNum}
                 </button>
               ))}
-              {totalPages > 10 && <span className="text-slate-600 px-2 font-black">...</span>}
            </div>
         </div>
       </div>
@@ -181,12 +203,12 @@ export const Ledger: React.FC = () => {
       <AnimatePresence>
         {viewingAttachment && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl" onClick={() => setViewingAttachment(null)}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative max-w-4xl w-full">
+            <MotionDiv initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative max-w-4xl w-full">
                <img src={viewingAttachment} className="w-full h-auto rounded-3xl shadow-2xl border border-slate-700" alt="Memo Attachment" />
                <button onClick={() => setViewingAttachment(null)} className="absolute -top-12 right-0 text-white flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest">
                   <X size={20} /> Close Preview
                </button>
-            </motion.div>
+            </MotionDiv>
           </div>
         )}
       </AnimatePresence>
@@ -202,8 +224,11 @@ export const Ledger: React.FC = () => {
   );
 };
 
+// ==========================================
+// TRANSACTION FORM MODAL
+// ==========================================
 const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transaction, defaultType: 'deposit' | 'expense' }> = ({ onClose, transaction, defaultType }) => {
-  const { projects, categories, updateCategories, clients, updateClients, addTransaction, updateTransaction, selectedProjectId, currentUser } = useAppContext();
+  const { projects, categories, updateCategories, clients, updateClients, banks, updateBanks, partners, addTransaction, updateTransaction, selectedProjectId, currentUser } = useAppContext();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -211,7 +236,11 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
 
   const [showQuickAddCategory, setShowQuickAddCategory] = useState(false);
   const [showQuickAddClient, setShowQuickAddClient] = useState(false);
+  
+  // 🔴 কুইক ব্যাংক অ্যাড এর জন্য অ্যাকাউন্ট নাম্বার যুক্ত করা হয়েছে
+  const [showQuickAddBank, setShowQuickAddBank] = useState(false);
   const [quickAddName, setQuickAddName] = useState('');
+  const [quickAddAccount, setQuickAddAccount] = useState(''); 
 
   const [form, setForm] = useState({
     date: transaction?.date || new Date().toISOString().split('T')[0],
@@ -220,6 +249,7 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
     projectId: transaction?.projectId || String(selectedProjectId === 'all' ? (projects?.[0]?.id || '') : selectedProjectId),
     categoryId: transaction?.categoryId || '',
     accountId: transaction?.accountId || AccountId.BANK,
+    bankId: transaction?.bankId || '',
     clientId: transaction?.clientId || '',
     partnerId: transaction?.partnerId || '',
     type: transaction?.type || defaultType,
@@ -239,11 +269,7 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
 
   const handleQuickAddCategory = async () => {
     if (!quickAddName.trim()) return;
-    const newCat: Category = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: quickAddName.trim(),
-      type: form.type === 'deposit' ? 'income' : 'expense'
-    };
+    const newCat: Category = { id: Math.random().toString(36).substr(2, 9), name: quickAddName.trim(), type: form.type === 'deposit' ? 'income' : 'expense' };
     await updateCategories(prev => [...prev, newCat]);
     setForm(prev => ({ ...prev, categoryId: newCat.id }));
     setQuickAddName('');
@@ -252,25 +278,33 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
 
   const handleQuickAddClient = async () => {
     if (!quickAddName.trim()) return;
-    const newClient: Client = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: quickAddName.trim(),
-      email: '',
-      phone: ''
-    };
+    const newClient: Client = { id: Math.random().toString(36).substr(2, 9), name: quickAddName.trim(), email: '', phone: '' };
     await updateClients(prev => [...prev, newClient]);
     setForm(prev => ({ ...prev, clientId: newClient.id }));
     setQuickAddName('');
     setShowQuickAddClient(false);
   };
 
+  // 🔴 কুইক ব্যাংক অ্যাড লজিক (অ্যাকাউন্ট নাম্বার সহ)
+  const handleQuickAddBank = async () => {
+    if (!quickAddName.trim()) return;
+    const newBank: Bank = { 
+      id: `b_${Date.now()}`, 
+      name: quickAddName.trim(),
+      accountNumber: quickAddAccount.trim() || undefined
+    };
+    await updateBanks([...banks, newBank]);
+    setForm(prev => ({ ...prev, bankId: newBank.id }));
+    setQuickAddName('');
+    setQuickAddAccount('');
+    setShowQuickAddBank(false);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setForm(prev => ({ ...prev, attachment: reader.result as string }));
-      };
+      reader.onloadend = () => setForm(prev => ({ ...prev, attachment: reader.result as string }));
       reader.readAsDataURL(file);
     }
   };
@@ -281,6 +315,8 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
 
     if (!form.categoryId || form.categoryId === "") return setErrorMsg("Fiscal category selection is mandatory.");
     if (!form.projectId || form.projectId === "") return setErrorMsg("Project portfolio selection is mandatory.");
+    if (form.accountId === AccountId.BANK && !form.bankId) return setErrorMsg("Please select a Bank.");
+    if (form.accountId === AccountId.PARTNER && !form.partnerId) return setErrorMsg("Please select a Partner.");
 
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -291,7 +327,8 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
       ...form, 
       amount: parseFloat(form.amount) || 0,
       clientId: form.clientId === "" ? null : form.clientId,
-      partnerId: form.partnerId === "" ? null : form.partnerId,
+      partnerId: form.accountId === AccountId.PARTNER ? form.partnerId : null,
+      bankId: form.accountId === AccountId.BANK ? form.bankId : undefined,
       attachment: form.attachment === "" ? null : form.attachment,
       auditUser: auditName
     };
@@ -317,7 +354,7 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-xl rounded-3xl p-6 md:p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-xl rounded-3xl p-6 md:p-10 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
         <button onClick={onClose} className="absolute top-6 right-6 text-slate-500 hover:text-white"><X size={24} /></button>
         <h3 className="text-2xl font-bold font-outfit text-white mb-6 tracking-tight">
           {transaction ? 'Modify Ledger Record' : 'Commit New Entry'}
@@ -339,7 +376,7 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Fiscal Value ($)</label>
-              <input required type="number" step="0.01" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-1 focus:ring-amber-400 outline-none" />
+              <input required type="number" step="0.01" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-1 focus:ring-amber-400 outline-none font-bold" />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Reporting Date</label>
@@ -347,59 +384,85 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
             </div>
           </div>
 
-          <div className="space-y-4">
-            {form.type === 'deposit' && (
-              <div className="space-y-1">
+          {/* ডিপোজিটর নাম ড্রপডাউন */}
+          {form.type === 'deposit' && (
+            <div className="space-y-1">
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Depositor Name (ক্লায়েন্ট)</label>
+                <button type="button" onClick={() => setShowQuickAddClient(!showQuickAddClient)} className="text-[9px] font-black text-emerald-400 uppercase tracking-widest hover:text-emerald-300 flex items-center gap-1">
+                  <UserPlus size={12} /> {showQuickAddClient ? 'Cancel' : 'New Depositor'}
+                </button>
+              </div>
+              {showQuickAddClient ? (
+                <div className="flex gap-2 animate-in slide-in-from-top-2 duration-200">
+                  <input autoFocus placeholder="New Depositor Name..." className="flex-1 bg-slate-900 border border-emerald-500/30 rounded-xl px-4 py-2 text-white outline-none" value={quickAddName} onChange={e => setQuickAddName(e.target.value)} />
+                  <button type="button" onClick={handleQuickAddClient} className="bg-emerald-500 text-slate-950 p-3 rounded-xl hover:bg-emerald-400 transition-colors"><Check size={18} /></button>
+                </div>
+              ) : (
+                <select value={form.clientId} onChange={e => setForm({...form, clientId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white font-bold outline-none focus:border-emerald-500">
+                  <option value="">N/A (General Entry)</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-4 bg-slate-900/50 p-4 rounded-2xl border border-slate-700">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2 mb-2">
+                 <Wallet size={14} className="text-amber-400" />
+                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                   {form.type === 'deposit' ? 'Destination Node' : 'Source Node (পেমেন্ট কোথা থেকে হবে?)'}
+                 </label>
+              </div>
+              <select 
+                required 
+                value={form.accountId} 
+                onChange={e => setForm({...form, accountId: e.target.value as AccountId})} 
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-1 focus:ring-amber-400 font-bold text-sm"
+              >
+                <option value={AccountId.BANK}>Central Bank Account</option>
+                <option value={AccountId.MANAGER}>Manager Operational Fund</option>
+                <option value={AccountId.PARTNER}>Partner Stakeholder Ledger</option>
+              </select>
+            </div>
+
+            {/* 🔴 ব্যাংক ড্রপডাউন (ব্যাংকের নাম ও অ্যাকাউন্ট নাম্বারসহ) 🔴 */}
+            {form.accountId === AccountId.BANK && (
+              <div className="space-y-1 animate-in slide-in-from-top-2">
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Depositor Name</label>
-                  <button type="button" onClick={() => setShowQuickAddClient(!showQuickAddClient)} className="text-[9px] font-black text-emerald-400 uppercase tracking-widest hover:text-emerald-300 flex items-center gap-1">
-                    <UserPlus size={12} /> {showQuickAddClient ? 'Cancel' : 'New Depositor'}
+                  <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest pl-1">Select Bank (ব্যাংক নির্বাচন)</label>
+                  <button type="button" onClick={() => setShowQuickAddBank(!showQuickAddBank)} className="text-[9px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 flex items-center gap-1">
+                    <Landmark size={12} /> {showQuickAddBank ? 'Cancel' : 'New Bank'}
                   </button>
                 </div>
-                {showQuickAddClient ? (
+                {showQuickAddBank ? (
                   <div className="flex gap-2 animate-in slide-in-from-top-2 duration-200">
-                    <input autoFocus placeholder="New Depositor Name..." className="flex-1 bg-slate-900 border border-emerald-500/30 rounded-xl px-4 py-2 text-white outline-none" value={quickAddName} onChange={e => setQuickAddName(e.target.value)} />
-                    <button type="button" onClick={handleQuickAddClient} className="bg-emerald-500 text-slate-950 p-3 rounded-xl hover:bg-emerald-400 transition-colors"><Check size={18} /></button>
+                    <input autoFocus placeholder="Bank Name..." className="flex-1 bg-slate-900 border border-amber-500/30 rounded-xl px-4 py-2 text-white outline-none" value={quickAddName} onChange={e => setQuickAddName(e.target.value)} />
+                    <input placeholder="A/C (Optional)" className="flex-1 bg-slate-900 border border-amber-500/30 rounded-xl px-4 py-2 text-white outline-none" value={quickAddAccount} onChange={e => setQuickAddAccount(e.target.value)} />
+                    <button type="button" onClick={handleQuickAddBank} className="bg-amber-400 text-slate-950 p-3 rounded-xl hover:bg-amber-300 transition-colors"><Check size={18} /></button>
                   </div>
                 ) : (
-                  <select value={form.clientId} onChange={e => setForm({...form, clientId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
-                    <option value="">N/A (General Entry)</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <select required value={form.bankId} onChange={e => setForm({...form, bankId: e.target.value})} className="w-full bg-slate-950 border border-amber-500/30 rounded-xl px-4 py-3 text-white outline-none font-bold">
+                    <option value="">-- ব্যাংক নির্বাচন করুন --</option>
+                    {banks.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>
+                    ))}
                   </select>
                 )}
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Active Portfolio</label>
-                <select required value={form.projectId} onChange={e => setForm({...form, projectId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
-                  <option value="" disabled>Select Project...</option>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {/* পার্টনার ড্রপডাউন */}
+            {form.accountId === AccountId.PARTNER && (
+              <div className="space-y-1 animate-in slide-in-from-top-2">
+                <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest pl-1">Specific Partner (পার্টনারের নাম)</label>
+                <select required value={form.partnerId} onChange={e => setForm({...form, partnerId: e.target.value})} className="w-full bg-slate-950 border border-amber-500/30 rounded-xl px-4 py-3 text-white outline-none font-bold">
+                  <option value="">-- পার্টনার নির্বাচন করুন --</option>
+                  {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
-              <div className="space-y-1">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
-                    {form.type === 'deposit' ? 'Revenue Category' : 'Expenditure Category'}
-                  </label>
-                  <button type="button" onClick={() => setShowQuickAddCategory(!showQuickAddCategory)} className="text-[9px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 flex items-center gap-1">
-                    <FolderPlus size={12} /> {showQuickAddCategory ? 'Cancel' : 'Add Category'}
-                  </button>
-                </div>
-                {showQuickAddCategory ? (
-                  <div className="flex gap-2 animate-in slide-in-from-top-2 duration-200">
-                    <input autoFocus placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-amber-500/30 rounded-xl px-4 py-2 text-white outline-none" value={quickAddName} onChange={e => setQuickAddName(e.target.value)} />
-                    <button type="button" onClick={handleQuickAddCategory} className="bg-amber-400 text-slate-950 p-3 rounded-xl hover:bg-amber-300 transition-colors"><Check size={18} /></button>
-                  </div>
-                ) : (
-                  <select required value={form.categoryId} onChange={e => setForm({...form, categoryId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
-                    <option value="" disabled>Choose Classification...</option>
-                    {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                )}
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -407,24 +470,39 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
             <input required type="text" value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Fiscal note detail..." className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-1 focus:ring-amber-400 outline-none" />
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Active Portfolio</label>
+              <select required value={form.projectId} onChange={e => setForm({...form, projectId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
+                <option value="" disabled>Select Project...</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{form.type === 'deposit' ? 'Revenue Category' : 'Expenditure Category'}</label>
+                <button type="button" onClick={() => setShowQuickAddCategory(!showQuickAddCategory)} className="text-[9px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 flex items-center gap-1"><FolderPlus size={12} /> {showQuickAddCategory ? 'Cancel' : 'Add Category'}</button>
+              </div>
+              {showQuickAddCategory ? (
+                <div className="flex gap-2 animate-in slide-in-from-top-2 duration-200">
+                  <input autoFocus placeholder="New Category Name..." className="flex-1 bg-slate-900 border border-amber-500/30 rounded-xl px-4 py-2 text-white outline-none" value={quickAddName} onChange={e => setQuickAddName(e.target.value)} />
+                  <button type="button" onClick={handleQuickAddCategory} className="bg-amber-400 text-slate-950 p-3 rounded-xl hover:bg-amber-300 transition-colors"><Check size={18} /></button>
+                </div>
+              ) : (
+                <select required value={form.categoryId} onChange={e => setForm({...form, categoryId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
+                  <option value="" disabled>Choose Classification...</option>
+                  {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Digital Proof (Image)</label>
             <div className="flex items-center gap-4">
-              <button 
-                type="button" 
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-slate-700 transition-all"
-              >
-                <ImageIcon size={14} />
-                <span>Insert Memo</span>
-              </button>
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-slate-700 transition-all"><ImageIcon size={14} /><span>Insert Memo</span></button>
               {form.attachment && (
-                <div className="relative group">
-                  <img src={form.attachment} className="w-14 h-14 rounded-xl object-cover border border-slate-700 shadow-lg" alt="Thumbnail" />
-                  <button type="button" onClick={() => setForm(prev => ({ ...prev, attachment: '' }))} className="absolute -top-2 -right-2 bg-red-500 p-1 rounded-full text-white shadow-lg opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                    <X size={10} />
-                  </button>
-                </div>
+                <div className="relative group"><img src={form.attachment} className="w-14 h-14 rounded-xl object-cover border border-slate-700 shadow-lg" alt="Thumbnail" /><button type="button" onClick={() => setForm(prev => ({ ...prev, attachment: '' }))} className="absolute -top-2 -right-2 bg-red-500 p-1 rounded-full text-white shadow-lg"><X size={10} /></button></div>
               )}
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
             </div>
@@ -435,7 +513,7 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
             <span>{isSubmitting ? 'Synchronizing...' : (transaction ? 'Confirm Adjustments' : 'Commit to Ledger')}</span>
           </button>
         </form>
-      </motion.div>
+      </MotionDiv>
     </div>
   );
 };

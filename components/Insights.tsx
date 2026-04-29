@@ -1,9 +1,12 @@
-
 import React, { useMemo, useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUpRight, ArrowDownRight, Users, Box, DollarSign, PieChart, X, History, Tag, Calendar } from 'lucide-react';
 import { UserRole } from '../types';
+
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+const MotionTr = motion.tr as any;
 
 export const Insights: React.FC = () => {
   const { transactions, selectedProjectId, clients, categories, currentUser } = useAppContext();
@@ -66,16 +69,17 @@ export const Insights: React.FC = () => {
     return results.sort((a, b) => b.total - a.total);
   }, [filtered, categories]);
 
+  // 🔴 FIX: Added .trim() on name to fix spacing mismatches when drilling down
   const drillDownData = useMemo(() => {
     if (!drillDown) return [];
     return filtered.filter(t => {
       if (drillDown.type === 'client') {
         const client = clients.find(c => c.id === t.clientId);
-        const name = client ? client.name : 'INTERNAL REVENUE';
+        const name = client ? client.name.trim() : 'INTERNAL REVENUE'; 
         return name === drillDown.name && t.type === 'deposit';
       } else {
         const cat = categories.find(c => c.id === t.categoryId);
-        const name = cat ? cat.name : 'Uncategorized';
+        const name = cat ? cat.name.trim() : 'Uncategorized';
         return name === drillDown.name && t.type === 'expense';
       }
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -85,7 +89,7 @@ export const Insights: React.FC = () => {
     `$${Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
-    <motion.div 
+    <MotionDiv 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
@@ -131,7 +135,7 @@ export const Insights: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-700/30">
                   {incomeSummary.map((item, idx) => (
-                    <motion.tr 
+                    <MotionTr 
                       key={item.displayName}
                       onClick={() => setDrillDown({ type: 'client', name: item.displayName })}
                       initial={{ opacity: 0 }}
@@ -145,7 +149,7 @@ export const Insights: React.FC = () => {
                       <td className="px-8 py-5 text-right font-black font-outfit text-emerald-400 text-lg">
                         {formatCurrency(item.total)}
                       </td>
-                    </motion.tr>
+                    </MotionTr>
                   ))}
                 </tbody>
               </table>
@@ -181,7 +185,7 @@ export const Insights: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-700/30">
                   {expenseSummary.map((item, idx) => (
-                    <motion.tr 
+                    <MotionTr 
                       key={item.displayName}
                       onClick={() => setDrillDown({ type: 'category', name: item.displayName })}
                       initial={{ opacity: 0 }}
@@ -195,7 +199,7 @@ export const Insights: React.FC = () => {
                       <td className="px-8 py-5 text-right font-black font-outfit text-red-400 text-lg">
                         {formatCurrency(item.total)}
                       </td>
-                    </motion.tr>
+                    </MotionTr>
                   ))}
                 </tbody>
               </table>
@@ -244,7 +248,7 @@ export const Insights: React.FC = () => {
       <AnimatePresence>
         {drillDown && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-10 bg-slate-950/90 backdrop-blur-xl">
-            <motion.div 
+            <MotionDiv 
               initial={{ scale: 0.95, opacity: 0 }} 
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -293,10 +297,10 @@ export const Insights: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            </motion.div>
+            </MotionDiv>
           </div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </MotionDiv>
   );
 };

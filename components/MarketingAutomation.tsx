@@ -7,6 +7,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { io, Socket } from 'socket.io-client';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+
 const BACKEND_URL = (import.meta as any).env?.VITE_MARKETING_BACKEND_URL || 'https://whatsapp-0954.onrender.com';
 
 export const MarketingAutomation: React.FC = () => {
@@ -158,7 +161,7 @@ export const MarketingAutomation: React.FC = () => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+    <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold font-outfit text-white tracking-tight">Marketing Automation</h2>
@@ -186,13 +189,13 @@ export const MarketingAutomation: React.FC = () => {
         <div className="lg:col-span-5 space-y-6">
           <AnimatePresence mode="wait">
             {qrCode ? (
-              <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[2.5rem] flex flex-col items-center justify-center text-center shadow-2xl">
+              <MotionDiv key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[2.5rem] flex flex-col items-center justify-center text-center shadow-2xl">
                  <img src={qrCode} alt="WhatsApp QR" className="w-64 h-64 mb-4" />
                  <h4 className="text-slate-950 font-black uppercase">Scan QR Code</h4>
                  <button onClick={() => setQrCode(null)} className="mt-4 text-slate-400 hover:text-slate-900 text-xs font-bold">Close</button>
-              </motion.div>
+              </MotionDiv>
             ) : (
-              <motion.div key="composer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl space-y-8">
+              <MotionDiv key="composer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl space-y-8">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Message Body (Caption)</label>
                   <textarea rows={4} value={message} onChange={e => setMessage(e.target.value)} placeholder="Type your main message here..." className="w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 text-white text-sm focus:ring-4 focus:ring-amber-400/10 outline-none resize-none" />
@@ -221,7 +224,7 @@ export const MarketingAutomation: React.FC = () => {
                   {isSending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
                   <span>{isSending ? `Sending... ${Math.round(sendingProgress)}%` : `Launch to ${selectedLeads.length} Leads`}</span>
                 </button>
-              </motion.div>
+              </MotionDiv>
             )}
           </AnimatePresence>
         </div>
@@ -301,6 +304,6 @@ export const MarketingAutomation: React.FC = () => {
           </div>
         </div>
       </div>
-    </motion.div>
+    </MotionDiv>
   );
 };

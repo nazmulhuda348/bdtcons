@@ -1,19 +1,23 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Send, CheckCircle2, Loader2, Receipt, User, Phone, DollarSign, Calendar, Building2 } from 'lucide-react';
+import { Send, CheckCircle2, Loader2, Receipt, User, Phone, DollarSign, Calendar, Building2, Landmark } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../AppContext';
+
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
 
 // আপনার ব্যাকএন্ড URL (Render)
 const BACKEND_URL = (import.meta as any).env?.VITE_MARKETING_BACKEND_URL || 'https://whatsapp-0954.onrender.com';
 
 export const MoneyDeposit: React.FC = () => {
-  // AppContext থেকে প্রজেক্ট, ক্লায়েন্ট, ট্রানজেকশন এবং addTransaction নিয়ে আসা হচ্ছে
-  const { projects, clients, transactions, addTransaction } = useAppContext();
+  // AppContext থেকে প্রজেক্ট, ক্লায়েন্ট, ট্রানজেকশন, ব্যাংক এবং addTransaction নিয়ে আসা হচ্ছে
+  const { projects, clients, transactions, banks, addTransaction } = useAppContext();
   
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedBankId, setSelectedBankId] = useState(''); // 🔴 নতুন ব্যাংক স্টেট
   const [amount, setAmount] = useState('');
   const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
   
@@ -32,6 +36,11 @@ export const MoneyDeposit: React.FC = () => {
   const selectedClient = useMemo(() => {
     return clients.find(c => c.id === selectedClientId) || null;
   }, [clients, selectedClientId]);
+
+  // সিলেক্ট করা ব্যাংকের ডাটা (রিসিটে দেখানোর জন্য)
+  const selectedBank = useMemo(() => {
+    return banks?.find(b => b.id === selectedBankId) || null;
+  }, [banks, selectedBankId]);
 
   // ৩. নির্দিষ্ট প্রজেক্টে নির্দিষ্ট ক্লায়েন্টের আগের সর্বমোট জমার হিসাব বের করা
   const previousTotal = useMemo(() => {
@@ -56,6 +65,9 @@ export const MoneyDeposit: React.FC = () => {
     if (!selectedClient || !amount) {
       return alert('অনুগ্রহ করে ক্লায়েন্ট সিলেক্ট করুন এবং টাকার পরিমাণ দিন!');
     }
+    if (!selectedBankId) {
+      return alert('অনুগ্রহ করে ব্যাংক সিলেক্ট করুন!');
+    }
     if (!selectedClient.phone) {
       return alert('এই ক্লায়েন্টের কোনো হোয়াটসঅ্যাপ নম্বর সেভ করা নেই। দয়া করে Admin Panel থেকে নম্বর আপডেট করুন।');
     }
@@ -73,6 +85,7 @@ export const MoneyDeposit: React.FC = () => {
         amount: newDepositAmount,
         categoryId: 'cat1', // Deposit ক্যাটাগরির আইডি (আপনার constants.tsx অনুযায়ী)
         accountId: 'BANK' as any,
+        bankId: selectedBankId, // 🔴 ট্রানজেকশনে ব্যাংক আইডি সেভ করা হলো
         clientId: selectedClient.id,
         type: 'deposit',
         auditUser: 'System',
@@ -97,7 +110,8 @@ export const MoneyDeposit: React.FC = () => {
       const pdfBase64 = pdf.output('datauristring'); // Base64 ডাটা
 
       // ৪. WhatsApp-এ মেসেজ পাঠানো
-      const message = `সম্মানিত ${selectedClient.name},\n\n*${selectedProject.name}* প্রজেক্টের জন্য আপনার নতুন জমা: ${newDepositAmount.toLocaleString()} টাকা সফলভাবে গ্রহণ করা হয়েছে (তারিখ: ${formattedDate})।\nএই প্রজেক্টে আপনার এ পর্যন্ত সর্বমোট জমা: ${grandTotal.toLocaleString()} টাকা।\n\nআপনার ডিজিটাল মানি রিসিটটি এই মেসেজের সাথে সংযুক্ত করা হলো।\n\nট্রানজেকশন আইডি: ${transactionId}\n\n------------------------\n🟢 *Building Developments & Technologies*\n_Smart Software. Smart Business. Smart Growth._`;
+      const bankDetails = selectedBank ? `${selectedBank.name} ${selectedBank.accountNumber ? `(A/C: ${selectedBank.accountNumber})` : ''}` : 'Cash/Bank';
+      const message = `সম্মানিত ${selectedClient.name},\n\n*${selectedProject.name}* প্রজেক্টের জন্য আপনার নতুন জমা: ${newDepositAmount.toLocaleString()} টাকা সফলভাবে গ্রহণ করা হয়েছে (তারিখ: ${formattedDate})।\nজমাকৃত ব্যাংক: ${bankDetails}\n\nএই প্রজেক্টে আপনার এ পর্যন্ত সর্বমোট জমা: ${grandTotal.toLocaleString()} টাকা।\n\nআপনার ডিজিটাল মানি রিসিটটি এই মেসেজের সাথে সংযুক্ত করা হলো।\n\nট্রানজেকশন আইডি: ${transactionId}\n\n------------------------\n🟢 *Building Developments & Technologies*\n_Smart Software. Smart Business. Smart Growth._`;
 
       const response = await fetch(`${BACKEND_URL}/api/marketing/send`, {
         method: 'POST',
@@ -122,8 +136,8 @@ export const MoneyDeposit: React.FC = () => {
       // ৫. ফর্ম ক্লিয়ার করা
       setSelectedClientId('');
       setAmount('');
+      setSelectedBankId('');
       setDepositDate(new Date().toISOString().split('T')[0]);
-      // প্রজেক্ট সিলেক্ট করাই থাকতে পারে, যদি ইউজার একই প্রজেক্টে আরও এন্ট্রি করতে চায়। চাইলে এটিও রিসেট করতে পারেন: setSelectedProjectId('');
 
     } catch (error) {
       console.error(error);
@@ -137,7 +151,7 @@ export const MoneyDeposit: React.FC = () => {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-6 max-w-6xl mx-auto">
       
       {/* বাম পাশ: টাকা জমা দেওয়ার ফর্ম */}
-      <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-xl">
+      <MotionDiv initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-xl">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-3 bg-emerald-500/10 rounded-xl"><DollarSign className="text-emerald-400" size={24} /></div>
           <h2 className="text-2xl font-bold text-white font-outfit">Deposit & Receipt</h2>
@@ -151,7 +165,7 @@ export const MoneyDeposit: React.FC = () => {
         )}
 
         <form onSubmit={handleDeposit} className="space-y-5">
-          {/* প্রজেক্ট সিলেক্ট করার অপশন (নতুন যুক্ত করা হয়েছে) */}
+          {/* প্রজেক্ট সিলেক্ট করার অপশন */}
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Project</label>
             <div className="relative">
@@ -163,7 +177,7 @@ export const MoneyDeposit: React.FC = () => {
                   setSelectedClientId(''); // প্রজেক্ট চেঞ্জ করলে ক্লায়েন্ট রিসেট হবে
                 }} 
                 required 
-                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none"
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none cursor-pointer"
               >
                 <option value="" disabled>-- প্রজেক্ট নির্বাচন করুন --</option>
                 {projects.map(p => (
@@ -201,7 +215,7 @@ export const MoneyDeposit: React.FC = () => {
                 onChange={e => setSelectedClientId(e.target.value)} 
                 required 
                 disabled={!selectedProjectId} // প্রজেক্ট সিলেক্ট না করলে ক্লায়েন্ট সিলেক্ট করা যাবে না
-                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none disabled:opacity-50"
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none disabled:opacity-50 cursor-pointer"
               >
                 <option value="" disabled>-- ক্লায়েন্ট নির্বাচন করুন --</option>
                 {clients.map(c => (
@@ -226,11 +240,30 @@ export const MoneyDeposit: React.FC = () => {
             </div>
           </div>
 
+          {/* 🔴 ব্যাংক সিলেক্ট করার অপশন (নতুন যুক্ত করা হয়েছে) */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Bank (কোথায় জমা হয়েছে?)</label>
+            <div className="relative">
+              <Landmark className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-400" size={18} />
+              <select 
+                value={selectedBankId} 
+                onChange={e => setSelectedBankId(e.target.value)} 
+                required 
+                className="w-full bg-slate-900 border border-amber-500/30 rounded-2xl py-4 pl-12 pr-4 text-white font-bold text-sm focus:ring-2 focus:ring-amber-400 outline-none appearance-none cursor-pointer"
+              >
+                <option value="" disabled>-- ব্যাংক নির্বাচন করুন --</option>
+                {banks?.map(b => (
+                  <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* জমার পরিমাণ */}
           <div className="space-y-2">
             <div className="flex justify-between items-end">
                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Deposit Amount (BDT)</label>
-               {/* রিয়েল টাইম আগের জমার হিসাব (শুধুমাত্র এই প্রজেক্টের জন্য) */}
+               {/* রিয়েল টাইম আগের জমার হিসাব */}
                {selectedClient && selectedProject && (
                  <span className="text-xs font-bold text-slate-400 bg-slate-900 px-3 py-1 rounded-lg border border-slate-700">
                     Project Total: <span className="text-emerald-400">৳ {previousTotal.toLocaleString()}</span>
@@ -251,15 +284,15 @@ export const MoneyDeposit: React.FC = () => {
             </div>
           </div>
 
-          <button type="submit" disabled={isProcessing || !selectedClientId || !selectedProjectId} className={`w-full py-4 mt-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center space-x-3 shadow-xl ${isProcessing || !selectedClientId || !selectedProjectId ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'}`}>
+          <button type="submit" disabled={isProcessing || !selectedClientId || !selectedProjectId || !selectedBankId} className={`w-full py-4 mt-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center space-x-3 shadow-xl ${isProcessing || !selectedClientId || !selectedProjectId || !selectedBankId ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'}`}>
             {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
             <span>{isProcessing ? 'Processing & Sending PDF...' : 'Generate Receipt & Send WhatsApp'}</span>
           </button>
         </form>
-      </motion.div>
+      </MotionDiv>
 
       {/* ডান পাশ: মানি রিসিট প্রিভিউ (যাকে আমরা PDF বানাবো) */}
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col items-center lg:items-start">
+      <MotionDiv initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col items-center lg:items-start">
         <div className="mb-4 flex items-center space-x-2 text-slate-400">
           <Receipt size={16} />
           <span className="text-xs font-bold uppercase tracking-widest">Live Receipt Preview</span>
@@ -305,6 +338,13 @@ export const MoneyDeposit: React.FC = () => {
                 <span className="text-slate-500">Phone Number:</span>
                 <span className="font-bold">{selectedClient?.phone || '_______________'}</span>
               </div>
+              {/* 🔴 রিসিটে ব্যাংকের তথ্য যোগ করা হলো */}
+              <div className="flex justify-between border-b border-dashed border-slate-300 pb-2">
+                <span className="text-slate-500">Deposited To:</span>
+                <span className="font-bold text-amber-600">
+                  {selectedBank ? `${selectedBank.name} ${selectedBank.accountNumber ? `(${selectedBank.accountNumber})` : ''}` : '_______________'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -337,7 +377,7 @@ export const MoneyDeposit: React.FC = () => {
           </div>
         </div>
         {/* ============================================== */}
-      </motion.div>
+      </MotionDiv>
 
     </div>
   );

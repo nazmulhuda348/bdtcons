@@ -1,3 +1,5 @@
+// types.ts
+
 export enum UserRole {
   ADMIN = 'ADMIN',
   MANAGER = 'MANAGER',
@@ -49,6 +51,15 @@ export enum AccountId {
   MANAGER = 'MANAGER'
 }
 
+/** * 🔴 নতুন পরিবর্তন: ব্যাংক ইন্টারফেস যুক্ত করা হয়েছে 
+ * এটি আপনাকে আপনার প্রয়োজন মতো ব্যাংক অ্যাকাউন্ট তৈরি করতে সাহায্য করবে।
+ */
+export interface Bank {
+  id: string;
+  name: string;
+  accountNumber?: string;
+}
+
 export interface Transaction {
   id: string;
   projectId: string;
@@ -57,6 +68,7 @@ export interface Transaction {
   amount: number;
   categoryId: string;
   accountId: AccountId;
+  bankId?: string;       // 🔴 নতুন পরিবর্তন: নির্দিষ্ট ব্যাংক ট্র্যাক করার জন্য
   clientId?: string | null;
   partnerId?: string | null;
   type: 'deposit' | 'expense';
@@ -141,9 +153,10 @@ export interface AppState {
   projects: Project[];
   clients: Client[];
   partners: Partner[];
+  banks: Bank[];                   // 🔴 নতুন পরিবর্তন: ব্যাংক লিস্ট রাখার জন্য
   suppliers: Supplier[];
-  materials: Material[];           // Added Material
-  inventoryLogs: InventoryLog[];   // Added Inventory Logs
+  materials: Material[];
+  inventoryLogs: InventoryLog[];
   leads: Lead[];
   categories: Category[];
   transactions: Transaction[];

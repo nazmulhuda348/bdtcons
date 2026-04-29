@@ -4,6 +4,9 @@ import { UserRole, User, Project, Client } from '../types';
 import { Users, Briefcase, UserCircle, Plus, Trash2, Shield, X, Key, ShieldCheck, Lock, UserPlus, AlertTriangle, Edit2, Facebook, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+
 // নতুন ৩টি পারমিশন অপশন (F, G, H) যুক্ত করা হয়েছে
 export const AVAILABLE_PERMISSIONS = [
   { id: 'add_ledger', label: 'A. Ledger (1. Add Entry)' },
@@ -52,7 +55,6 @@ export const AdminPanel: React.FC = () => {
       <div className="mt-6">
         {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} deleteUserDb={deleteUser} />}
         {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} deleteProjectDb={deleteProject} />}
-        {/* 🔴 এখানে projects পাস করা হয়েছে 🔴 */}
         {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} projects={projects} />}
       </div>
     </div>
@@ -201,7 +203,7 @@ const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => vo
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-3xl p-8 shadow-2xl my-8">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-3xl p-8 shadow-2xl my-8">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center space-x-3">
              <div className="p-2 bg-amber-400/10 rounded-xl"><UserPlus className="text-amber-400" size={20} /></div>
@@ -248,7 +250,7 @@ const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => vo
 
           <button type="submit" className="w-full py-4 mt-4 bg-amber-400 text-slate-900 font-bold rounded-2xl hover:bg-amber-500 transition-all uppercase text-[10px] tracking-widest">Create Profile</button>
         </form>
-      </motion.div>
+      </MotionDiv>
     </div>
   );
 };
@@ -262,7 +264,7 @@ const PermissionsChangeModal: React.FC<{ user: User, onClose: () => void, onSubm
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-3xl p-8 shadow-2xl">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-3xl p-8 shadow-2xl">
         <h3 className="text-xl font-bold text-white mb-2">Edit Permissions</h3>
         <p className="text-slate-400 text-sm mb-6">Modify access limits for <strong>{user.name}</strong></p>
         
@@ -279,7 +281,7 @@ const PermissionsChangeModal: React.FC<{ user: User, onClose: () => void, onSubm
           <button onClick={onClose} className="flex-1 py-4 bg-slate-900 text-slate-400 font-bold rounded-2xl">Cancel</button>
           <button onClick={() => { onSubmit(user.id, selectedPerms); onClose(); }} className="flex-1 py-4 bg-emerald-500 text-slate-950 font-bold rounded-2xl">Save Changes</button>
         </div>
-      </motion.div>
+      </MotionDiv>
     </div>
   );
 };
@@ -288,14 +290,14 @@ const PasswordChangeModal: React.FC<{ user: User, onClose: () => void, onSubmit:
   const [newPassword, setNewPassword] = useState('');
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-3xl p-8 shadow-2xl">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-3xl p-8 shadow-2xl">
         <h3 className="text-xl font-bold text-white mb-6">Reset Secret Key for {user.name}</h3>
         <input type="password" required className="w-full bg-slate-900 border border-slate-700 rounded-xl py-4 px-4 text-white mb-6" placeholder="New password..." value={newPassword} onChange={e => setNewPassword(e.target.value)} />
         <div className="flex gap-4">
           <button onClick={onClose} className="flex-1 py-4 bg-slate-900 text-slate-400 font-bold rounded-2xl">Cancel</button>
           <button onClick={() => { onSubmit(user.id, newPassword); onClose(); }} className="flex-1 py-4 bg-amber-400 text-slate-900 font-bold rounded-2xl">Update Key</button>
         </div>
-      </motion.div>
+      </MotionDiv>
     </div>
   );
 };
@@ -355,7 +357,6 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
   );
 };
 
-// 🔴 ClientManager এ প্রজেক্ট রিসিভ করে ড্রপডাউন এবং ব্যাজ যোগ করা হয়েছে 🔴
 const ClientManager: React.FC<{ 
   clients: Client[], 
   setClients: (c: Client[] | ((prev: Client[]) => Client[])) => void, 
@@ -376,7 +377,6 @@ const ClientManager: React.FC<{
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {clients.map(c => {
-        // 🔴 ক্লায়েন্টের প্রজেক্টের নাম খুঁজে বের করা
         const assignedProject = projects.find(p => p.id === c.projectId);
         
         return (
@@ -387,7 +387,6 @@ const ClientManager: React.FC<{
              </div>
              <h4 className="text-white font-bold">{c.name}</h4>
              
-             {/* 🔴 প্রজেক্টের নাম দেখানোর ব্যাজ 🔴 */}
              {assignedProject && (
                 <span className="inline-block mt-2 px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[9px] font-black uppercase tracking-widest rounded-md">
                   {assignedProject.name}
@@ -422,7 +421,6 @@ const ClientManager: React.FC<{
                <input placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" onChange={e => setNewClient({...newClient, phone: e.target.value})} />
                <input placeholder="Facebook ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" onChange={e => setNewClient({...newClient, facebookId: e.target.value})} />
                
-               {/* 🔴 New Client ফর্মে Project Dropdown 🔴 */}
                <div className="relative">
                  <select 
                    value={newClient.projectId || ''} 
@@ -454,7 +452,6 @@ const ClientManager: React.FC<{
                <input required placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" value={editingClient.phone} onChange={e => setEditingClient({...editingClient, phone: e.target.value})} />
                <input placeholder="Facebook ID" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-400" value={editingClient.facebookId || ''} onChange={e => setEditingClient({...editingClient, facebookId: e.target.value})} />
                
-               {/* 🔴 Edit Client ফর্মে Project Dropdown 🔴 */}
                <div className="relative">
                  <select 
                    value={editingClient.projectId || ''} 

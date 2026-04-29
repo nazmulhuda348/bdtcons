@@ -5,7 +5,6 @@ import {
   TrendingUp, 
   TrendingDown, 
   DollarSign, 
-  PieChart, 
   Settings, 
   Users, 
   ChevronDown, 
@@ -13,16 +12,28 @@ import {
   UserCheck,
   ArrowRight,
   ArrowDown,
-  Tag
+  Tag,
+  Landmark,
+  CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AccountId, UserRole } from '../types';
 
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
+
 export const Dashboard: React.FC = () => {
-  const { transactions, projects, leads, accounts, categories, selectedProjectId, globalMarkupOverride, currentUser } = useAppContext();
+  const { 
+    transactions, projects, accounts, categories, selectedProjectId, 
+    globalMarkupOverride, currentUser, banks, partners, partnerBalances 
+  } = useAppContext();
+  
   const [showNetBreakdown, setShowNetBreakdown] = useState(false);
   const [showDepositsBreakdown, setShowDepositsBreakdown] = useState(false);
   const [showExpensesBreakdown, setShowExpensesBreakdown] = useState(false);
+  
+  // 🔴 Node Detail দেখার জন্য নতুন স্টেট
+  const [activeNode, setActiveNode] = useState<string | null>(null);
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
   const effectiveMarkup = globalMarkupOverride !== null ? globalMarkupOverride : (activeProject?.serviceMarkup || 0);
@@ -44,7 +55,6 @@ export const Dashboard: React.FC = () => {
     const costWithMarkup = rawExpenses * (1 + effectiveMarkup / 100);
     const netBalance = deposits - rawExpenses;
 
-    // Detailed breakdowns for UI expansion
     const depositsByCategory = filtered
       .filter(t => t.type === 'deposit')
       .reduce((acc, t) => {
@@ -61,15 +71,21 @@ export const Dashboard: React.FC = () => {
         return acc;
       }, {} as Record<string, number>);
 
-    return { 
-      deposits, 
-      rawExpenses, 
-      costWithMarkup, 
-      netBalance, 
-      depositsByCategory, 
-      expensesByCategory 
-    };
+    return { deposits, rawExpenses, costWithMarkup, netBalance, depositsByCategory, expensesByCategory };
   }, [transactions, selectedProjectId, effectiveMarkup, categories, currentUser]);
+
+  // 🔴 নির্দিষ্ট ব্যাংকের ব্যালেন্স হিসাব করার লজিক
+  const bankBalances = useMemo(() => {
+    const balances: Record<string, number> = {};
+    banks.forEach(b => { balances[b.id] = 0; });
+    
+    transactions.forEach(t => {
+      if (t.accountId === AccountId.BANK && t.bankId) {
+        balances[t.bankId] = (balances[t.bankId] || 0) + (t.type === 'deposit' ? t.amount : -t.amount);
+      }
+    });
+    return balances;
+  }, [transactions, banks]);
 
   const pipelineNodes = [
     { id: 'start', label: 'Net Balance', value: stats.netBalance, icon: DollarSign, color: 'from-slate-700 to-slate-800' },
@@ -78,30 +94,29 @@ export const Dashboard: React.FC = () => {
     { id: AccountId.MANAGER, label: 'Manager Fund', value: accounts[AccountId.MANAGER], icon: UserCheck, color: 'from-emerald-600/20 to-teal-600/20' },
   ];
 
-  // GUESTS should not see the full Treasury Pipeline if it includes enterprise-wide account totals
   const showPipeline = currentUser?.role !== UserRole.GUEST;
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="space-y-6 md:space-y-8"
-    >
+    <MotionDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6 md:space-y-8">
+      
       {/* Visual Pipeline Flowchart - Restricted for GUESTS */}
       {showPipeline && (
         <div className="bg-slate-900/50 border border-slate-800 rounded-[1.5rem] md:rounded-[2.5rem] p-6 md:p-10 overflow-hidden">
-          <div className="flex items-center space-x-3 mb-8 md:mb-10">
-             <div className="p-2 bg-amber-400/10 rounded-xl"><Settings size={20} className="text-amber-400" /></div>
-             <h3 className="text-lg md:text-xl font-bold text-white font-outfit uppercase tracking-widest">Treasury Pipeline</h3>
+          <div className="flex items-center justify-between mb-8 md:mb-10">
+             <div className="flex items-center space-x-3">
+               <div className="p-2 bg-amber-400/10 rounded-xl"><Settings size={20} className="text-amber-400" /></div>
+               <h3 className="text-lg md:text-xl font-bold text-white font-outfit uppercase tracking-widest">Treasury Pipeline</h3>
+             </div>
+             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest hidden md:block">Click nodes for details</p>
           </div>
           
           <div className="flex flex-col lg:flex-row items-center justify-between gap-4 md:gap-6 relative">
             {pipelineNodes.map((node, idx) => (
               <React.Fragment key={node.id}>
-                <motion.div 
+                <MotionDiv 
                   whileHover={{ scale: 1.02 }}
-                  className={`relative w-full lg:flex-1 bg-gradient-to-br ${node.color} border border-slate-700/50 p-5 md:p-6 rounded-2xl md:rounded-3xl backdrop-blur-xl shadow-2xl flex flex-col items-center text-center`}
+                  onClick={() => node.id !== 'start' ? setActiveNode(activeNode === node.id ? null : node.id) : null}
+                  className={`relative w-full lg:flex-1 bg-gradient-to-br ${node.color} border transition-all cursor-pointer p-5 md:p-6 rounded-2xl md:rounded-3xl backdrop-blur-xl shadow-2xl flex flex-col items-center text-center ${activeNode === node.id ? 'border-amber-400 shadow-amber-400/10' : 'border-slate-700/50 hover:border-slate-600'}`}
                 >
                   <div className="p-2 md:p-3 bg-slate-900/50 rounded-xl md:rounded-2xl mb-3 md:mb-4 text-white">
                     <node.icon size={20} className="md:w-6 md:h-6" />
@@ -112,7 +127,7 @@ export const Dashboard: React.FC = () => {
                   {node.id === 'start' && (
                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-amber-400 text-slate-950 text-[7px] md:text-[8px] font-black rounded-full uppercase">Source</div>
                   )}
-                </motion.div>
+                </MotionDiv>
                 
                 {idx < pipelineNodes.length - 1 && (
                   <div className="flex lg:hidden items-center text-slate-800 my-1">
@@ -127,6 +142,57 @@ export const Dashboard: React.FC = () => {
               </React.Fragment>
             ))}
           </div>
+
+          {/* 🔴 Detailed Breakdown Section (Bank & Partner) 🔴 */}
+          <AnimatePresence>
+            {activeNode === AccountId.BANK && (
+              <MotionDiv initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-8 pt-8 border-t border-slate-800 overflow-hidden">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Landmark size={14}/> Detailed Bank Breakdown</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   {banks.map(bank => (
+                     <div key={bank.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                        <div>
+                          <p className="text-white font-bold text-sm">{bank.name}</p>
+                          {bank.accountNumber && <p className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1"><CreditCard size={10}/> {bank.accountNumber}</p>}
+                        </div>
+                        <span className="text-lg font-black text-blue-400 font-outfit">${(bankBalances[bank.id] || 0).toLocaleString()}</span>
+                     </div>
+                   ))}
+                   {banks.length === 0 && <p className="text-xs text-slate-500 italic">No registered banks found.</p>}
+                </div>
+              </MotionDiv>
+            )}
+
+            {activeNode === AccountId.PARTNER && (
+              <MotionDiv initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-8 pt-8 border-t border-slate-800 overflow-hidden">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Users size={14}/> Partner Share Breakdown</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   {partners.map(partner => (
+                     <div key={partner.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                        <div>
+                          <p className="text-white font-bold text-sm">{partner.name}</p>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">Stakeholder</p>
+                        </div>
+                        <span className="text-lg font-black text-amber-400 font-outfit">${(partnerBalances[partner.id] || 0).toLocaleString()}</span>
+                     </div>
+                   ))}
+                   {partners.length === 0 && <p className="text-xs text-slate-500 italic">No registered partners found.</p>}
+                </div>
+              </MotionDiv>
+            )}
+            
+            {activeNode === AccountId.MANAGER && (
+              <MotionDiv initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-8 pt-8 border-t border-slate-800 overflow-hidden">
+                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center max-w-sm">
+                   <div>
+                     <p className="text-white font-bold text-sm">Manager Operating Fund</p>
+                     <p className="text-[10px] text-slate-500 mt-0.5">General Cash In Hand</p>
+                   </div>
+                   <span className="text-lg font-black text-emerald-400 font-outfit">${accounts[AccountId.MANAGER].toLocaleString()}</span>
+                </div>
+              </MotionDiv>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -143,7 +209,7 @@ export const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {/* Gross Deposits Card */}
-        <motion.div 
+        <MotionDiv 
           whileHover={{ y: -4 }} 
           onClick={() => setShowDepositsBreakdown(!showDepositsBreakdown)}
           className={`cursor-pointer p-5 md:p-6 rounded-2xl border transition-all duration-300 shadow-xl overflow-hidden ${showDepositsBreakdown ? 'bg-emerald-500 border-emerald-500' : 'bg-slate-800 border-slate-700'}`}
@@ -161,7 +227,7 @@ export const Dashboard: React.FC = () => {
 
           <AnimatePresence>
             {showDepositsBreakdown && (
-              <motion.div 
+              <MotionDiv 
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -182,13 +248,13 @@ export const Dashboard: React.FC = () => {
                     </div>
                   ))
                 )}
-              </motion.div>
+              </MotionDiv>
             )}
           </AnimatePresence>
-        </motion.div>
+        </MotionDiv>
 
         {/* Simulated Cost Card */}
-        <motion.div 
+        <MotionDiv 
           whileHover={{ y: -4 }} 
           onClick={() => setShowExpensesBreakdown(!showExpensesBreakdown)}
           className={`cursor-pointer p-5 md:p-6 rounded-2xl border transition-all duration-300 shadow-xl overflow-hidden ${showExpensesBreakdown ? 'bg-amber-400 border-amber-400' : 'bg-slate-800 border-slate-700'}`}
@@ -206,7 +272,7 @@ export const Dashboard: React.FC = () => {
 
           <AnimatePresence>
             {showExpensesBreakdown && (
-              <motion.div 
+              <MotionDiv 
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -235,13 +301,13 @@ export const Dashboard: React.FC = () => {
                     <span className="text-[8px] font-black uppercase tracking-tighter text-slate-950/50">Incl. {effectiveMarkup}% markup</span>
                   </div>
                 )}
-              </motion.div>
+              </MotionDiv>
             )}
           </AnimatePresence>
-        </motion.div>
+        </MotionDiv>
 
         {/* Net Treasury Card */}
-        <motion.div 
+        <MotionDiv 
           whileHover={{ scale: 1.01, y: -4 }}
           onClick={() => setShowNetBreakdown(!showNetBreakdown)}
           className={`relative cursor-pointer p-5 md:p-6 rounded-2xl border transition-all duration-300 shadow-2xl overflow-hidden ${showNetBreakdown ? 'bg-amber-400 border-amber-400' : 'bg-slate-800 border-slate-700'}`}
@@ -259,7 +325,7 @@ export const Dashboard: React.FC = () => {
 
           <AnimatePresence>
             {showNetBreakdown && (
-              <motion.div 
+              <MotionDiv 
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -282,13 +348,13 @@ export const Dashboard: React.FC = () => {
                     </span>
                   </div>
                 ))}
-              </motion.div>
+              </MotionDiv>
             )}
           </AnimatePresence>
-        </motion.div>
+        </MotionDiv>
 
-        {/* Node Distribution - Conditional Content for GUESTS */}
-        <motion.div whileHover={{ y: -4 }} className="bg-slate-800 p-5 md:p-6 rounded-2xl border border-slate-700 shadow-xl">
+        {/* Node Distribution */}
+        <MotionDiv whileHover={{ y: -4 }} className="bg-slate-800 p-5 md:p-6 rounded-2xl border border-slate-700 shadow-xl">
           <div className="p-2 w-fit rounded-xl bg-slate-400/10 mb-4">
             <Settings className="text-slate-400" size={24} />
           </div>
@@ -300,15 +366,14 @@ export const Dashboard: React.FC = () => {
              </div>
              <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
                 {currentUser?.role !== UserRole.GUEST ? (
-                  // Fix: Explicitly ensuring numeric types for arithmetic operations to resolve TypeScript errors by casting values used in division to number.
                   <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${Math.min(100, (Number(accounts[AccountId.BANK] || 0) / (Number(stats.netBalance) || 1)) * 100)}%` }} />
                 ) : (
                   <div className="h-full bg-slate-700 w-1/3 animate-pulse" />
                 )}
              </div>
           </div>
-        </motion.div>
+        </MotionDiv>
       </div>
-    </motion.div>
+    </MotionDiv>
   );
 };

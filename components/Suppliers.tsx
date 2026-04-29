@@ -1,12 +1,16 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Truck, Plus, Search, Trash2, Edit2, X, MessageCircle, ChevronRight, 
   Package, Phone as PhoneIcon, PackagePlus, PackageMinus, 
-  History, Building2, Check, AlertTriangle
+  History, Building2, Check, ArrowRightLeft
 } from 'lucide-react';
 import { Supplier, Material, InventoryLog, AccountId } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Structural Fix for React 19 + Framer Motion Type Conflicts
+const MotionDiv = motion.div as any;
 
 export const Suppliers: React.FC = () => {
   const { 
@@ -28,6 +32,7 @@ export const Suppliers: React.FC = () => {
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
   const [showStockModal, setShowStockModal] = useState<'IN' | 'OUT' | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false); // New Transfer State
 
   const filteredSuppliers = useMemo(() => {
     return suppliers.filter(s => {
@@ -208,11 +213,14 @@ export const Suppliers: React.FC = () => {
                </div>
              </div>
 
-             <div className="flex gap-3 w-full md:w-auto">
-                <button onClick={() => setShowStockModal('OUT')} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-red-500/10 text-red-400 border border-red-500/20 px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-red-500/20 transition-all">
+             <div className="flex flex-wrap md:flex-nowrap gap-3 w-full md:w-auto">
+                <button onClick={() => setShowStockModal('OUT')} className="flex-1 flex items-center justify-center space-x-2 bg-red-500/10 text-red-400 border border-red-500/20 px-6 py-3 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest hover:bg-red-500/20 transition-all">
                   <PackageMinus size={16}/> <span>Use (Out)</span>
                 </button>
-                <button onClick={() => setShowStockModal('IN')} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-500 text-slate-950 px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
+                <button onClick={() => setShowTransferModal(true)} className="flex-1 flex items-center justify-center space-x-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 px-6 py-3 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest hover:bg-blue-500/20 transition-all">
+                  <ArrowRightLeft size={16}/> <span>Transfer</span>
+                </button>
+                <button onClick={() => setShowStockModal('IN')} className="flex-1 flex items-center justify-center space-x-2 bg-emerald-500 text-slate-950 px-6 py-3 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-widest hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
                   <PackagePlus size={16}/> <span>Buy (In)</span>
                 </button>
              </div>
@@ -263,12 +271,24 @@ export const Suppliers: React.FC = () => {
                       recentLogs.map(log => {
                         const material = materials.find(m => m.id === log.materialId);
                         const isOut = log.type === 'OUT';
+                        
+                        // Check if it's a transfer log by checking the note
+                        const isTransfer = log.note?.includes('[Transfer to') || log.note?.includes('[Received from');
+                        
+                        let badgeClass = isOut ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                        let badgeText = isOut ? 'USED' : 'BOUGHT';
+                        
+                        if(isTransfer) {
+                           badgeClass = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                           badgeText = isOut ? 'SENT' : 'RECEIVED';
+                        }
+
                         return (
                           <tr key={log.id} className="hover:bg-slate-700/20 transition-colors">
                             <td className="p-4 text-xs text-slate-400 font-mono whitespace-nowrap">{log.date}</td>
                             <td className="p-4">
-                              <span className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider ${isOut ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
-                                {isOut ? 'USED' : 'BOUGHT'}
+                              <span className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider border ${badgeClass}`}>
+                                {badgeText}
                               </span>
                             </td>
                             <td className="p-4 text-xs font-bold text-slate-300">{material?.name || 'Unknown'}</td>
@@ -308,6 +328,17 @@ export const Suppliers: React.FC = () => {
           categories={categories}
         />
       )}
+
+      {showTransferModal && (
+        <StockTransferModal 
+          sourceProjectId={selectedProjectId}
+          onClose={() => setShowTransferModal(false)}
+          projects={projects}
+          materials={materials}
+          inventoryLogs={inventoryLogs}
+          updateInventoryLogs={updateInventoryLogs}
+        />
+      )}
     </div>
   );
 };
@@ -315,12 +346,135 @@ export const Suppliers: React.FC = () => {
 // ==========================================
 // MODAL COMPONENTS 
 // ==========================================
+
+const StockTransferModal: React.FC<any> = ({ sourceProjectId, onClose, projects, materials, inventoryLogs, updateInventoryLogs }) => {
+  const sourceProject = projects.find((p: any) => p.id === sourceProjectId);
+  const otherProjects = projects.filter((p: any) => p.id !== sourceProjectId);
+
+  const [form, setForm] = useState({
+    materialId: '', quantity: '', destProjectId: '', date: new Date().toISOString().split('T')[0], note: ''
+  });
+
+  // Calculate live stock for the source project so we can validate and display it
+  const sourceLiveStock = useMemo(() => {
+    return materials.map((mat: any) => {
+      const logsForMatAndProj = inventoryLogs.filter((log: any) => log.materialId === mat.id && log.projectId === sourceProjectId);
+      const totalIn = logsForMatAndProj.filter((l: any) => l.type === 'IN').reduce((acc: number, l: any) => acc + (Number(l.quantity) || 0), 0);
+      const totalOut = logsForMatAndProj.filter((l: any) => l.type === 'OUT').reduce((acc: number, l: any) => acc + (Number(l.quantity) || 0), 0);
+      return { ...mat, currentStock: totalIn - totalOut };
+    }).filter((m: any) => m.currentStock > 0); // Only show materials that actually have stock
+  }, [materials, inventoryLogs, sourceProjectId]);
+
+  const selectedMaterialStock = sourceLiveStock.find((m: any) => m.id === form.materialId)?.currentStock || 0;
+  const selectedMaterialUnit = sourceLiveStock.find((m: any) => m.id === form.materialId)?.unit || '';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.materialId || !form.quantity || !form.destProjectId) return alert("Material, Quantity, and Destination Site are required.");
+    
+    const qty = parseFloat(form.quantity);
+    if (qty <= 0) return alert("Quantity must be greater than zero.");
+    if (qty > selectedMaterialStock) return alert("Transfer quantity exceeds available stock at the source site.");
+    
+    const destProject = projects.find((p: any) => p.id === form.destProjectId);
+    const timestamp = Date.now();
+
+    // 1. Create OUT log for Source Site
+    const outLog: InventoryLog = {
+      id: `inv_${timestamp}_out`,
+      date: form.date,
+      projectId: sourceProjectId,
+      type: 'OUT',
+      materialId: form.materialId,
+      quantity: qty,
+      note: `[Transfer to ${destProject?.name}] ${form.note}`
+    };
+
+    // 2. Create IN log for Destination Site
+    const inLog: InventoryLog = {
+      id: `inv_${timestamp}_in`,
+      date: form.date,
+      projectId: form.destProjectId,
+      type: 'IN',
+      materialId: form.materialId,
+      quantity: qty,
+      note: `[Received from ${sourceProject?.name}] ${form.note}`
+    };
+
+    // Push both logs to state/DB
+    await updateInventoryLogs((prev: InventoryLog[]) => [...prev, outLog, inLog]);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-blue-500/30 w-full max-w-lg rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-6 right-6 text-slate-500 hover:text-white"><X size={24} /></button>
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-400">
+            <ArrowRightLeft size={24} />
+          </div>
+          <h3 className="text-2xl font-bold font-outfit text-white tracking-tight">Site Transfer</h3>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="p-4 bg-slate-900/50 rounded-xl border border-slate-700">
+             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Source Site</p>
+             <p className="text-white font-bold">{sourceProject?.name}</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Destination Site (কোথায় পাঠাবেন?)</label>
+            <select required value={form.destProjectId} onChange={e => setForm({...form, destProjectId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500">
+              <option value="" disabled>-- Select Destination Site --</option>
+              {otherProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Select Material (স্টকে থাকা মাল)</label>
+            <select required value={form.materialId} onChange={e => setForm({...form, materialId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500">
+              <option value="" disabled>-- Select Material --</option>
+              {sourceLiveStock.map((m: any) => <option key={m.id} value={m.id}>{m.name} (Avail: {m.currentStock} {m.unit})</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Quantity</label>
+                {form.materialId && <span className="text-[10px] text-blue-400 font-bold">Max: {selectedMaterialStock}</span>}
+              </div>
+              <div className="relative">
+                <input required type="number" step="0.01" max={selectedMaterialStock} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none font-bold focus:border-blue-500 pr-12" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold uppercase">{selectedMaterialUnit}</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Date</label>
+              <input required type="date" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Vehicle / Tracking Note (Tracking/গাড়ির নাম্বার)</label>
+            <input type="text" placeholder="Truck No: Dhaka-Metro-T..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
+          </div>
+
+          <button type="submit" className="w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all mt-4 bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-500/20">
+            Confirm Transfer
+          </button>
+        </form>
+      </MotionDiv>
+    </div>
+  );
+}
+
 const StockInOutModal: React.FC<any> = ({ type, projectId, onClose, materials, updateMaterials, suppliers, updateInventoryLogs, addTransaction, currentUser, categories }) => {
   const [form, setForm] = useState({
     materialId: '', quantity: '', supplierId: '', totalCost: '', note: '', date: new Date().toISOString().split('T')[0]
   });
   
-  // Custom Purpose Management
   const [savedPurposes, setSavedPurposes] = useState<string[]>(() => {
     const local = localStorage.getItem('bdt_custom_purposes');
     return local ? JSON.parse(local) : [
@@ -394,7 +548,7 @@ const StockInOutModal: React.FC<any> = ({ type, projectId, onClose, materials, u
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative">
         <button onClick={onClose} className="absolute top-6 right-6 text-slate-500 hover:text-white"><X size={24} /></button>
         <div className="flex items-center space-x-3 mb-6">
           <div className={`p-3 rounded-xl ${type === 'IN' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -450,7 +604,6 @@ const StockInOutModal: React.FC<any> = ({ type, projectId, onClose, materials, u
             </>
           )}
 
-          {/* NEW: DYNAMIC PURPOSE SELECTOR WITH ADD NEW */}
           {type === 'OUT' && (
             <div className="space-y-1">
               <div className="flex justify-between items-center mb-1">
@@ -485,7 +638,7 @@ const StockInOutModal: React.FC<any> = ({ type, projectId, onClose, materials, u
             Confirm {type === 'OUT' ? 'Usage' : 'Receive'}
           </button>
         </form>
-      </div>
+      </MotionDiv>
     </div>
   );
 };
@@ -507,7 +660,7 @@ const SupplierModal: React.FC<any> = ({ supplier, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-      <div className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-3xl p-6 md:p-10 shadow-2xl relative">
+      <MotionDiv initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-3xl p-6 md:p-10 shadow-2xl relative">
         <button onClick={onClose} className="absolute top-6 right-6 text-slate-500 hover:text-white"><X size={24} /></button>
         <h3 className="text-2xl font-bold font-outfit text-white mb-6 tracking-tight">{supplier ? 'Edit Vendor' : 'New Vendor'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -516,7 +669,7 @@ const SupplierModal: React.FC<any> = ({ supplier, onClose }) => {
           <input placeholder="Phone" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-5 py-4 text-white outline-none" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
           <button type="submit" className="w-full bg-amber-400 text-slate-900 font-black py-4 rounded-xl text-xs uppercase shadow-lg mt-4">Save</button>
         </form>
-      </div>
+      </MotionDiv>
     </div>
   );
 };
