@@ -67,11 +67,14 @@ export const CashManagement: React.FC = () => {
       enhancedNote = `[${fromStr} ➡️ ${toStr}] ${transferForm.note}`;
     }
 
+    // 🔴 FIX: এখানে fromBankId এবং toBankId ডাটাবেসে পাঠানোর জন্য যুক্ত করা হয়েছে
     const newTransfer: InternalTransfer = {
       id: Math.random().toString(36).substr(2, 9),
       date: transferForm.date,
       fromAccount: transferForm.from,
       toAccount: transferForm.to,
+      fromBankId: transferForm.from === AccountId.BANK ? transferForm.fromBankId : undefined,
+      toBankId: transferForm.to === AccountId.BANK ? transferForm.toBankId : undefined,
       amount,
       note: enhancedNote,
       partnerId: transferForm.partnerId === "" ? undefined : transferForm.partnerId 

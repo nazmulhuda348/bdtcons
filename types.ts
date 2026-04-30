@@ -85,6 +85,8 @@ export interface InternalTransfer {
   amount: number;
   note: string;
   partnerId?: string;
+  fromBankId?: string; // 🔴 নতুন যুক্ত করা হলো
+  toBankId?: string;   // 🔴 নতুন যুক্ত করা হলো
 }
 
 export enum LeadStatus {

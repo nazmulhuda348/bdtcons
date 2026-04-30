@@ -24,7 +24,7 @@ const MotionDiv = motion.div as any;
 
 export const Dashboard: React.FC = () => {
   const { 
-    transactions, projects, accounts, categories, selectedProjectId, 
+    transactions, transfers, projects, accounts, categories, selectedProjectId, 
     globalMarkupOverride, currentUser, banks, partners, partnerBalances 
   } = useAppContext();
   
@@ -50,8 +50,8 @@ export const Dashboard: React.FC = () => {
       ? baseTx 
       : baseTx.filter(t => t.projectId === selectedProjectId);
 
-    const deposits = filtered.filter(t => t.type === 'deposit').reduce((acc, t) => acc + t.amount, 0);
-    const rawExpenses = filtered.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+    const deposits = filtered.filter(t => t.type === 'deposit').reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+    const rawExpenses = filtered.filter(t => t.type === 'expense').reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
     const costWithMarkup = rawExpenses * (1 + effectiveMarkup / 100);
     const netBalance = deposits - rawExpenses;
 
@@ -59,7 +59,7 @@ export const Dashboard: React.FC = () => {
       .filter(t => t.type === 'deposit')
       .reduce((acc, t) => {
         const cat = categories.find(c => c.id === t.categoryId)?.name || 'Other Revenue';
-        acc[cat] = (acc[cat] || 0) + t.amount;
+        acc[cat] = (acc[cat] || 0) + (Number(t.amount) || 0);
         return acc;
       }, {} as Record<string, number>);
 
@@ -67,25 +67,39 @@ export const Dashboard: React.FC = () => {
       .filter(t => t.type === 'expense')
       .reduce((acc, t) => {
         const cat = categories.find(c => c.id === t.categoryId)?.name || 'Misc Expense';
-        acc[cat] = (acc[cat] || 0) + t.amount;
+        acc[cat] = (acc[cat] || 0) + (Number(t.amount) || 0);
         return acc;
       }, {} as Record<string, number>);
 
     return { deposits, rawExpenses, costWithMarkup, netBalance, depositsByCategory, expensesByCategory };
   }, [transactions, selectedProjectId, effectiveMarkup, categories, currentUser]);
 
-  // 🔴 নির্দিষ্ট ব্যাংকের ব্যালেন্স হিসাব করার লজিক
+  // 🔴 নির্দিষ্ট ব্যাংকের ব্যালেন্স হিসাব করার লজিক (Transfers সহ এবং Number Safety সহ)
   const bankBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     banks.forEach(b => { balances[b.id] = 0; });
     
+    // ১. লেজারের ট্রানজেকশন (Transactions)
     transactions.forEach(t => {
-      if (t.accountId === AccountId.BANK && t.bankId) {
-        balances[t.bankId] = (balances[t.bankId] || 0) + (t.type === 'deposit' ? t.amount : -t.amount);
+      if (t.accountId === AccountId.BANK && t.bankId && balances[t.bankId] !== undefined) {
+        const amt = Number(t.amount) || 0;
+        balances[t.bankId] += (t.type === 'deposit' ? amt : -amt);
       }
     });
+
+    // ২. ক্যাশ ম্যানেজমেন্টের ট্রান্সফার (Transfers)
+    transfers.forEach(tf => {
+      const amt = Number(tf.amount) || 0;
+      if (tf.fromAccount === AccountId.BANK && tf.fromBankId && balances[tf.fromBankId] !== undefined) {
+        balances[tf.fromBankId] -= amt;
+      }
+      if (tf.toAccount === AccountId.BANK && tf.toBankId && balances[tf.toBankId] !== undefined) {
+        balances[tf.toBankId] += amt;
+      }
+    });
+
     return balances;
-  }, [transactions, banks]);
+  }, [transactions, transfers, banks]);
 
   const pipelineNodes = [
     { id: 'start', label: 'Net Balance', value: stats.netBalance, icon: DollarSign, color: 'from-slate-700 to-slate-800' },

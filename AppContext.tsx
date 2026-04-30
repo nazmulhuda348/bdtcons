@@ -150,7 +150,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     safeSetStorage('bdt_current_session', JSON.stringify(currentUser));
-    // Fixed viewAllMode and leadCategories naming
     safeSetStorage('bdt_view_all_mode', JSON.stringify(viewAllMode));
     safeSetStorage('bdt_lead_cats', JSON.stringify(leadCategories));
   }, [currentUser, viewAllMode, leadCategories]);
@@ -218,17 +217,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return totals;
   }, [transactions, transfers]);
 
+  // 🔴 Partner Balance Fix: Ledger Transactions & Internal Transfers 🔴
   const partnerBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     partners.forEach(p => { balances[p.id] = 0; });
+    
+    // ১. Ledger Transactions এর হিসাব
     transactions.forEach(t => { 
       if (t.accountId === AccountId.PARTNER && t.partnerId && balances[t.partnerId] !== undefined) { 
         if (t.type === 'expense') balances[t.partnerId] -= t.amount; 
         else balances[t.partnerId] += t.amount; 
       } 
     });
+
+    // ২. Internal Transfers এর হিসাব
+    transfers.forEach(tf => {
+      if (tf.fromAccount === AccountId.PARTNER && tf.partnerId && balances[tf.partnerId] !== undefined) {
+         balances[tf.partnerId] -= tf.amount;
+      }
+      if (tf.toAccount === AccountId.PARTNER && tf.partnerId && balances[tf.partnerId] !== undefined) {
+         balances[tf.partnerId] += tf.amount;
+      }
+    });
+
     return balances;
-  }, [partners, transactions]);
+  }, [partners, transactions, transfers]);
 
   return (
     <AppContext.Provider value={{
