@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Building2, Wallet, Users, UserCheck, ArrowRightLeft, 
-  Check, History, Landmark, Plus, Trash2, CreditCard 
+  Check, History, Landmark, Plus, Trash2, CreditCard, Send
 } from 'lucide-react';
 import { AccountId, InternalTransfer, Bank } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,28 +11,36 @@ import { motion, AnimatePresence } from 'framer-motion';
 const MotionDiv = motion.div as any;
 
 export const CashManagement: React.FC = () => {
-  const { accounts, transfers, transferCash, partners, banks, updateBanks, deleteBank } = useAppContext();
+  // 🔴 Added clients, projects and transferClientToClient
+  const { accounts, transfers, transferCash, partners, banks, updateBanks, deleteBank, clients, projects, transferClientToClient } = useAppContext();
   
-  // ব্যাংক রেজিস্ট্রি করার জন্য নতুন স্টেট
   const [newBankName, setNewBankName] = useState('');
   const [newBankAccount, setNewBankAccount] = useState('');
   
   const [transferForm, setTransferForm] = useState({
     from: AccountId.BANK,
     to: AccountId.PARTNER,
-    fromBankId: '', // From Node এর জন্য ব্যাংক
-    toBankId: '',   // To Node এর জন্য ব্যাংক
+    fromBankId: '', 
+    toBankId: '',   
     amount: '',
     note: '',
     partnerId: '',
     date: new Date().toISOString().split('T')[0]
   });
 
+  // 🔴 Client to Client Transfer State
+  const [clientTransferForm, setClientTransferForm] = useState({
+    senderId: '',
+    receiverId: '',
+    projectId: '',
+    amount: '',
+    note: ''
+  });
+
   const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBankName.trim()) return;
     
-    // নতুন ব্যাংক অবজেক্টে অ্যাকাউন্ট নাম্বার সহ সেভ করা হচ্ছে
     const newBank: Bank = { 
       id: `b_${Date.now()}`, 
       name: newBankName.trim(),
@@ -49,17 +57,14 @@ export const CashManagement: React.FC = () => {
     const amount = parseFloat(transferForm.amount);
     if (isNaN(amount) || amount <= 0) return alert('Invalid amount');
 
-    // ভ্যালিডেশন: ব্যাংক সিলেক্ট করা হয়েছে কি না চেক করা
     if (transferForm.from === AccountId.BANK && !transferForm.fromBankId) return alert('Please select the Source Bank.');
     if (transferForm.to === AccountId.BANK && !transferForm.toBankId) return alert('Please select the Destination Bank.');
     if (transferForm.from === AccountId.PARTNER && !transferForm.partnerId) return alert('Please select a Partner.');
     if (transferForm.to === AccountId.PARTNER && !transferForm.partnerId) return alert('Please select a Partner.');
 
-    // কোন ব্যাংক সিলেক্ট করা হয়েছে তা বের করা
     const fromBank = banks.find(b => b.id === transferForm.fromBankId);
     const toBank = banks.find(b => b.id === transferForm.toBankId);
 
-    // নোটের সাথে ব্যাংকের নাম যুক্ত করা (যাতে ডাটাবেস এরর না আসে এবং হিস্ট্রি ট্র্যাক করা যায়)
     let enhancedNote = transferForm.note || 'Internal Operational Transfer';
     if (transferForm.from === AccountId.BANK || transferForm.to === AccountId.BANK) {
       const fromStr = transferForm.from === AccountId.BANK ? (fromBank?.name || 'Bank') : transferForm.from;
@@ -67,7 +72,6 @@ export const CashManagement: React.FC = () => {
       enhancedNote = `[${fromStr} ➡️ ${toStr}] ${transferForm.note}`;
     }
 
-    // 🔴 FIX: এখানে fromBankId এবং toBankId ডাটাবেসে পাঠানোর জন্য যুক্ত করা হয়েছে
     const newTransfer: InternalTransfer = {
       id: Math.random().toString(36).substr(2, 9),
       date: transferForm.date,
@@ -82,7 +86,6 @@ export const CashManagement: React.FC = () => {
 
     await transferCash(newTransfer);
     
-    // ফর্ম রিসেট
     setTransferForm({ 
       ...transferForm, 
       amount: '', 
@@ -93,8 +96,28 @@ export const CashManagement: React.FC = () => {
     });
   };
 
+  // 🔴 Client to Client Action Handler
+  const handleClientTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(clientTransferForm.amount);
+    if (isNaN(amount) || amount <= 0) return alert('Invalid amount entered.');
+    if (clientTransferForm.senderId === clientTransferForm.receiverId) return alert('Sender and Receiver cannot be the same person!');
+    if (!clientTransferForm.projectId) return alert('Please select a relevant project.');
+
+    await transferClientToClient(
+      clientTransferForm.senderId,
+      clientTransferForm.receiverId,
+      amount,
+      clientTransferForm.projectId,
+      clientTransferForm.note
+    );
+
+    setClientTransferForm({ ...clientTransferForm, amount: '', note: '' });
+    alert('Client to Client Transfer Successful! Ledger updated.');
+  };
+
   return (
-    <MotionDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-12">
+    <MotionDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-12 pb-12">
       <div className="flex justify-between items-end">
         <div>
           <h2 className="text-3xl font-bold font-outfit text-white tracking-tight">Enterprise Treasury</h2>
@@ -169,8 +192,6 @@ export const CashManagement: React.FC = () => {
           
           <form onSubmit={handleTransfer} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900/30 p-6 rounded-3xl border border-slate-700/50">
-               
-               {/* From Node Section */}
                <div className="space-y-3">
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">From Node (উৎস)</label>
@@ -180,7 +201,6 @@ export const CashManagement: React.FC = () => {
                       <option value={AccountId.PARTNER}>Partner Stakeholder</option>
                    </select>
                  </div>
-                 {/* From Node Bank Dropdown */}
                  {transferForm.from === AccountId.BANK && (
                    <MotionDiv initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
                      <label className="text-[9px] font-black text-amber-400 uppercase tracking-widest ml-1 mb-1 block">Select Source Bank</label>
@@ -194,7 +214,6 @@ export const CashManagement: React.FC = () => {
                  )}
                </div>
 
-               {/* To Node Section */}
                <div className="space-y-3">
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">To Node (গন্তব্য)</label>
@@ -204,7 +223,6 @@ export const CashManagement: React.FC = () => {
                       <option value={AccountId.PARTNER}>Partner Stakeholder</option>
                    </select>
                  </div>
-                 {/* To Node Bank Dropdown */}
                  {transferForm.to === AccountId.BANK && (
                    <MotionDiv initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
                      <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest ml-1 mb-1 block">Select Destination Bank</label>
@@ -217,10 +235,8 @@ export const CashManagement: React.FC = () => {
                    </MotionDiv>
                  )}
                </div>
-
             </div>
 
-            {/* Partner Selection (If required) */}
             { (transferForm.from === AccountId.PARTNER || transferForm.to === AccountId.PARTNER) && (
               <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
                 <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest ml-1">Attributed Partner (পার্টনারের নাম)</label>
@@ -253,6 +269,69 @@ export const CashManagement: React.FC = () => {
             </button>
           </form>
         </div>
+      </div>
+
+      {/* ==========================================
+          🔴 Client to Client Transfer Section 🔴
+      ========================================== */}
+      <div className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl mt-8">
+        <div className="flex items-center space-x-4 mb-8">
+            <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400">
+              <Users size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white font-outfit">Client to Client Adjustment (P2P)</h3>
+              <p className="text-xs text-slate-500 mt-1">Settle dues between clients without affecting company treasury.</p>
+            </div>
+        </div>
+
+        <form onSubmit={handleClientTransfer} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900/30 p-6 rounded-3xl border border-slate-700/50">
+             
+             {/* Sender Client */}
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-rose-400 uppercase tracking-widest ml-1">Sender Client (কার ব্যালেন্স থেকে কাটবে?)</label>
+                <select required className="w-full bg-slate-950 border border-rose-500/30 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={clientTransferForm.senderId} onChange={e => setClientTransferForm({...clientTransferForm, senderId: e.target.value})}>
+                   <option value="">-- Select Sender --</option>
+                   {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+             </div>
+
+             {/* Receiver Client */}
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Receiver Client (কার ব্যালেন্সে যোগ হবে?)</label>
+                <select required className="w-full bg-slate-950 border border-emerald-500/30 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={clientTransferForm.receiverId} onChange={e => setClientTransferForm({...clientTransferForm, receiverId: e.target.value})}>
+                   <option value="">-- Select Receiver --</option>
+                   {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <div className="space-y-2">
+               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Amount ($)</label>
+               <input required type="number" step="0.01" className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-black text-lg outline-none focus:border-emerald-400" value={clientTransferForm.amount} onChange={e => setClientTransferForm({...clientTransferForm, amount: e.target.value})} />
+             </div>
+             
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Context Project</label>
+                <select required className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none focus:border-emerald-400" value={clientTransferForm.projectId} onChange={e => setClientTransferForm({...clientTransferForm, projectId: e.target.value})}>
+                   <option value="">-- Select Project Context --</option>
+                   {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+             </div>
+          </div>
+
+          <div className="space-y-2">
+             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Adjustment Note</label>
+             <input type="text" placeholder="e.g. Settling payment for materials..." className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:border-emerald-400" value={clientTransferForm.note} onChange={e => setClientTransferForm({...clientTransferForm, note: e.target.value})} />
+          </div>
+
+          <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-black py-5 rounded-2xl uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 hover:bg-emerald-400 transition-all flex items-center justify-center gap-3 mt-4">
+             <Send size={18} />
+             <span>Execute P2P Transfer</span>
+          </button>
+        </form>
       </div>
     </MotionDiv>
   );

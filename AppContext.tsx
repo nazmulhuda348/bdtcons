@@ -59,6 +59,10 @@ interface AppContextType extends AppState {
   setGlobalMarkupOverride: (val: number | null) => void;
   importData: (json: string) => void;
   transferCash: (transfer: InternalTransfer) => Promise<void>;
+  
+  // 🔴 Client to Client Transfer Function
+  transferClientToClient: (senderId: string, receiverId: string, amount: number, projectId: string, note: string) => Promise<void>;
+  
   partnerBalances: Record<string, number>;
   setViewAllMode: (val: boolean) => void;
   syncToCloud: () => Promise<boolean>;
@@ -202,6 +206,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setter((prev: any) => prev.filter((item: any) => item.id !== id));
   };
 
+  // 🔴 Client to Client Transfer Logic
+  const transferClientToClient = useCallback(async (senderId: string, receiverId: string, amount: number, projectId: string, note: string) => {
+    if (!currentUser) return;
+
+    const senderClient = clients.find(c => c.id === senderId);
+    const receiverClient = clients.find(c => c.id === receiverId);
+    const catId = categories.length > 0 ? categories[0].id : 'cat1';
+
+    const txSender: Transaction = {
+      id: `tx_${Date.now()}_s`,
+      projectId,
+      clientId: senderId,
+      date: new Date().toISOString().split('T')[0],
+      description: `P2P Transfer to ${receiverClient?.name} ${note ? `(${note})` : ''}`,
+      amount: amount,
+      categoryId: catId,
+      accountId: AccountId.MANAGER, // জিরো-সাম করার জন্য ভার্চুয়াল নোড ব্যবহার
+      type: 'expense', // প্রেরকের লেজার থেকে মাইনাস
+      createdByUserId: currentUser.id,
+      auditUser: currentUser.name || 'System'
+    };
+
+    const txReceiver: Transaction = {
+      id: `tx_${Date.now()}_r`,
+      projectId,
+      clientId: receiverId,
+      date: new Date().toISOString().split('T')[0],
+      description: `P2P Received from ${senderClient?.name} ${note ? `(${note})` : ''}`,
+      amount: amount,
+      categoryId: catId,
+      accountId: AccountId.MANAGER, // জিরো-সাম করার জন্য ভার্চুয়াল নোড ব্যবহার
+      type: 'deposit', // প্রাপকের লেজারে প্লাস
+      createdByUserId: currentUser.id,
+      auditUser: currentUser.name || 'System'
+    };
+
+    if (supabase) {
+      await supabase.from('transactions').insert([txSender, txReceiver]);
+    }
+    setTransactions(prev => [txSender, txReceiver, ...prev]);
+  }, [currentUser, clients, categories]);
+
   const accounts = useMemo(() => {
     const totals: Record<AccountId, number> = { ...INITIAL_ACCOUNTS };
     transactions.forEach(t => { 
@@ -217,12 +263,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return totals;
   }, [transactions, transfers]);
 
-  // 🔴 Partner Balance Fix: Ledger Transactions & Internal Transfers 🔴
   const partnerBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     partners.forEach(p => { balances[p.id] = 0; });
     
-    // ১. Ledger Transactions এর হিসাব
     transactions.forEach(t => { 
       if (t.accountId === AccountId.PARTNER && t.partnerId && balances[t.partnerId] !== undefined) { 
         if (t.type === 'expense') balances[t.partnerId] -= t.amount; 
@@ -230,7 +274,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } 
     });
 
-    // ২. Internal Transfers এর হিসাব
     transfers.forEach(tf => {
       if (tf.fromAccount === AccountId.PARTNER && tf.partnerId && balances[tf.partnerId] !== undefined) {
          balances[tf.partnerId] -= tf.amount;
@@ -261,7 +304,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transactions, setTransactions, addTransaction, deleteTransaction, updateTransaction,
       accounts, transfers, transferCash: async (t) => { if (supabase) await supabase.from('transfers').insert([t]); setTransfers(prev => [...prev, t]); }, 
       partnerBalances, selectedProjectId, setSelectedProjectId,
-      globalMarkupOverride, setGlobalMarkupOverride, importData: () => {}, viewAllMode, setViewAllMode, syncToCloud, isLoading
+      globalMarkupOverride, setGlobalMarkupOverride, importData: () => {}, viewAllMode, setViewAllMode, syncToCloud, isLoading,
+      transferClientToClient // 🔴 Exported new function
     }}>
       {children}
     </AppContext.Provider>

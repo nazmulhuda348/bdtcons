@@ -13,9 +13,10 @@ import { PartnerManagement } from './components/PartnerManagement';
 import { Suppliers } from './components/Suppliers';
 import { MarketingAutomation } from './components/MarketingAutomation';
 import { MoneyDeposit } from './components/MoneyDeposit';
+import { TransferLedger } from './components/TransferLedger'; // 🔴 নতুন ইমপোর্ট
 import { Lock, User as UserIcon, ShieldAlert, Loader2, Database } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { User } from './types'; // 🔴 এই ইমপোর্টটি নতুন যোগ করা হয়েছে 🔴
+import { User } from './types'; 
 
 const LoginPage: React.FC = () => {
   const { users, setCurrentUser, isLoading } = useAppContext();
@@ -33,7 +34,6 @@ const LoginPage: React.FC = () => {
     const cleanInputPassword = password.trim();
 
     // Verify against the cloud-synced user registry
-    // 🔴 এখানে (u: User) দিয়ে টাইপ ফিক্স করা হয়েছে 🔴
     const user = users.find((u: User) => u.username.trim().toLowerCase() === cleanInputUsername);
 
     if (user && String(user.password).trim() === cleanInputPassword) {
@@ -118,6 +118,7 @@ const MainApp: React.FC = () => {
       case 'deposit': return <MoneyDeposit />;
       case 'ledger': return <Ledger />;
       case 'treasury': return <CashManagement />;
+      case 'transfer_ledger': return <TransferLedger />; // 🔴 নতুন রাউট যুক্ত করা হয়েছে
       case 'partners': return <PartnerManagement />;
       case 'suppliers': return <Suppliers />;
       case 'leads': return <Leads />;

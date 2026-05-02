@@ -3,7 +3,7 @@ import { useAppContext } from '../AppContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   LayoutDashboard, BookOpen, BarChart2, Settings, LogOut, Menu,
-  Database, Search, Users, Wallet, UserCircle, Truck, MessageSquare, X, DollarSign, PlusCircle, FileText
+  Database, Search, Users, Wallet, UserCircle, Truck, MessageSquare, X, DollarSign, PlusCircle, FileText, ArrowRightLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -22,13 +22,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   const { isAdmin, isManager, currentUser, hasPermission } = usePermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Client Registry রিমুভ করে বাকি মেনুর আইটেমগুলো রাখা হয়েছে
+  // Client Registry রিমুভ করে বাকি মেনুর আইটেমগুলো রাখা হয়েছে এবং Transfer History যোগ করা হয়েছে
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: true },
     { id: 'ledger', label: 'Ledger', icon: BookOpen, visible: true }, 
     { id: 'deposit', label: 'Deposit & Receipt', icon: DollarSign, visible: hasPermission('deposit_receipt') },
     
     { id: 'treasury', label: 'Cash Management', icon: Wallet, visible: hasPermission('cash_management') },
+    // 🔴 Transfer History (TransferLedger) মেনুটি এখানে যোগ করা হলো
+    { id: 'transfer_ledger', label: 'Transfer History', icon: ArrowRightLeft, visible: hasPermission('cash_management') || isAdmin },
     { id: 'partners', label: 'Partners', icon: UserCircle, visible: hasPermission('partners') },
     { id: 'sync', label: 'Smart Sync', icon: PlusCircle, visible: hasPermission('smart_sync') },
     

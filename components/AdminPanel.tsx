@@ -21,7 +21,14 @@ export const AVAILABLE_PERMISSIONS = [
 ];
 
 export const AdminPanel: React.FC = () => {
-  const { users, projects, clients, updateUsers, updateProjects, updateClients, deleteUser, deleteProject, deleteClient } = useAppContext();
+  // Structural Fix: Destructured addUser, addProject, and addClient from context
+  const { 
+    users, projects, clients, 
+    updateUsers, updateProjects, updateClients, 
+    deleteUser, deleteProject, deleteClient,
+    addUser, addProject, addClient 
+  } = useAppContext() as any; 
+
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'projects' | 'clients'>('users');
 
   const tabs = [
@@ -53,15 +60,15 @@ export const AdminPanel: React.FC = () => {
       </div>
 
       <div className="mt-6">
-        {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} deleteUserDb={deleteUser} />}
-        {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} deleteProjectDb={deleteProject} />}
-        {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} projects={projects} />}
+        {activeSubTab === 'users' && <UserManager users={users} setUsers={updateUsers} projects={projects} deleteUserDb={deleteUser} addUserDb={addUser} />}
+        {activeSubTab === 'projects' && <ProjectManager projects={projects} setProjects={updateProjects} deleteProjectDb={deleteProject} addProjectDb={addProject} />}
+        {activeSubTab === 'clients' && <ClientManager clients={clients} setClients={updateClients} deleteClientDb={deleteClient} projects={projects} addClientDb={addClient} />}
       </div>
     </div>
   );
 };
 
-const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User[]) => User[])) => void, projects: Project[], deleteUserDb: (id: string) => Promise<void> }> = ({ users, setUsers, projects, deleteUserDb }) => {
+const UserManager: React.FC<{ users: User[], setUsers: any, projects: Project[], deleteUserDb: (id: string) => Promise<void>, addUserDb: any }> = ({ users, setUsers, projects, deleteUserDb, addUserDb }) => {
   const [passwordModalUser, setPasswordModalUser] = useState<User | null>(null);
   const [permissionsModalUser, setPermissionsModalUser] = useState<User | null>(null);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -77,7 +84,7 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
   };
 
   const toggleProjectAccess = (userId: string, projectId: string) => {
-    setUsers(prev => prev.map(u => {
+    setUsers((prev: User[]) => prev.map(u => {
       if (u.id === userId) {
         const assigned = u.assignedProjects || [];
         const has = assigned.includes(projectId);
@@ -180,20 +187,27 @@ const UserManager: React.FC<{ users: User[], setUsers: (u: User[] | ((prev: User
 
       <AnimatePresence>
         {passwordModalUser && (
-          <PasswordChangeModal user={passwordModalUser} onClose={() => setPasswordModalUser(null)} onSubmit={(id, pw) => setUsers(prev => prev.map(u => u.id === id ? { ...u, password: pw } : u))} />
+          <PasswordChangeModal user={passwordModalUser} onClose={() => setPasswordModalUser(null)} onSubmit={(id, pw) => setUsers((prev: User[]) => prev.map(u => u.id === id ? { ...u, password: pw } : u))} />
         )}
         {showAddUserModal && (
-          <AddUserModal onClose={() => setShowAddUserModal(false)} onSubmit={(nu) => setUsers(prev => [...prev, nu])} />
+          <AddUserModal onClose={() => setShowAddUserModal(false)} onSubmit={async (nu) => {
+            if (addUserDb) {
+              const createdUser = await addUserDb(nu);
+              if (createdUser) setUsers((prev: User[]) => [...prev, createdUser]);
+            } else {
+              setUsers((prev: User[]) => [...prev, { ...nu, id: Math.random().toString(36).substr(2, 9) } as User]);
+            }
+          }} />
         )}
         {permissionsModalUser && (
-          <PermissionsChangeModal user={permissionsModalUser} onClose={() => setPermissionsModalUser(null)} onSubmit={(id, perms) => setUsers(prev => prev.map(u => u.id === id ? { ...u, permissions: perms } : u))} />
+          <PermissionsChangeModal user={permissionsModalUser} onClose={() => setPermissionsModalUser(null)} onSubmit={(id, perms) => setUsers((prev: User[]) => prev.map(u => u.id === id ? { ...u, permissions: perms } : u))} />
         )}
       </AnimatePresence>
     </>
   );
 };
 
-const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => void }> = ({ onClose, onSubmit }) => {
+const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: any) => void }> = ({ onClose, onSubmit }) => {
   const [form, setForm] = useState({ username: '', name: '', password: '', role: UserRole.MANAGER });
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]); 
 
@@ -214,7 +228,8 @@ const AddUserModal: React.FC<{ onClose: () => void, onSubmit: (user: User) => vo
         
         <form onSubmit={(e) => { 
           e.preventDefault(); 
-          onSubmit({ id: Math.random().toString(36).substr(2, 9), ...form, assignedProjects: [], permissions: selectedPerms } as User); 
+          // Structural Fix: Removed Math.random(). Passed raw object so DB can generate ID.
+          onSubmit({ ...form, assignedProjects: [], permissions: selectedPerms }); 
           onClose(); 
         }} className="space-y-4">
           
@@ -302,7 +317,7 @@ const PasswordChangeModal: React.FC<{ user: User, onClose: () => void, onSubmit:
   );
 };
 
-const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[] | ((prev: Project[]) => Project[])) => void, deleteProjectDb: (id: string) => Promise<void> }> = ({ projects, setProjects, deleteProjectDb }) => {
+const ProjectManager: React.FC<{ projects: Project[], setProjects: any, deleteProjectDb: (id: string) => Promise<void>, addProjectDb: any }> = ({ projects, setProjects, deleteProjectDb, addProjectDb }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [newProject, setNewProject] = useState<Partial<Project>>({ name: '', serviceMarkup: 10, description: '' });
@@ -310,8 +325,19 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject) return;
-    setProjects(prev => prev.map(p => p.id === editingProject.id ? editingProject : p));
+    setProjects((prev: Project[]) => prev.map(p => p.id === editingProject.id ? editingProject : p));
     setEditingProject(null);
+  };
+
+  const handleCreateProject = async () => {
+    if (!newProject.name) return;
+    if (addProjectDb) {
+      const created = await addProjectDb(newProject);
+      if(created) setProjects((prev: Project[]) => [...prev, created]);
+    } else {
+      setProjects((prev: Project[]) => [...prev, { ...newProject, id: Math.random().toString(36).substr(2, 9) } as Project]);
+    }
+    setShowAdd(false);
   };
 
   return (
@@ -335,7 +361,7 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
             <div className="space-y-4">
                <input placeholder="Project Name" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" onChange={e => setNewProject({...newProject, name: e.target.value})} />
                <input type="number" placeholder="Markup %" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white" onChange={e => setNewProject({...newProject, serviceMarkup: parseInt(e.target.value)})} />
-               <div className="flex space-x-3 pt-4"><button onClick={() => setShowAdd(false)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400">Cancel</button><button onClick={() => { if(newProject.name) setProjects(prev => [...prev, {...newProject, id: Math.random().toString(36).substr(2, 9)} as Project]); setShowAdd(false); }} className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-bold">Create</button></div>
+               <div className="flex space-x-3 pt-4"><button onClick={() => setShowAdd(false)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400">Cancel</button><button onClick={handleCreateProject} className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-bold">Create</button></div>
             </div>
           </div>
         </div>
@@ -359,10 +385,11 @@ const ProjectManager: React.FC<{ projects: Project[], setProjects: (p: Project[]
 
 const ClientManager: React.FC<{ 
   clients: Client[], 
-  setClients: (c: Client[] | ((prev: Client[]) => Client[])) => void, 
+  setClients: any, 
   deleteClientDb: (id: string) => Promise<void>,
-  projects: Project[] 
-}> = ({ clients, setClients, deleteClientDb, projects }) => {
+  projects: Project[],
+  addClientDb: any
+}> = ({ clients, setClients, deleteClientDb, projects, addClientDb }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [newClient, setNewClient] = useState<Partial<Client>>({ name: '', email: '', phone: '', facebookId: '', projectId: '' });
@@ -370,8 +397,19 @@ const ClientManager: React.FC<{
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingClient) return;
-    setClients(prev => prev.map(c => c.id === editingClient.id ? editingClient : c));
+    setClients((prev: Client[]) => prev.map(c => c.id === editingClient.id ? editingClient : c));
     setEditingClient(null);
+  };
+
+  const handleCreateClient = async () => {
+    if (!newClient.name) return;
+    if (addClientDb) {
+      const created = await addClientDb(newClient);
+      if(created) setClients((prev: Client[]) => [...prev, created]);
+    } else {
+      setClients((prev: Client[]) => [...prev, { ...newClient, id: Math.random().toString(36).substr(2, 9) } as Client]);
+    }
+    setShowAdd(false);
   };
 
   return (
@@ -435,7 +473,7 @@ const ClientManager: React.FC<{
 
                <div className="flex space-x-3 pt-4">
                  <button onClick={() => setShowAdd(false)} className="flex-1 px-4 py-3 rounded-xl border border-slate-700 text-slate-400 font-bold text-xs uppercase tracking-widest">Cancel</button>
-                 <button onClick={() => { if(newClient.name) setClients(prev => [...prev, {...newClient, id: Math.random().toString(36).substr(2, 9)} as Client]); setShowAdd(false); }} className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-black text-xs uppercase tracking-widest">Register</button>
+                 <button onClick={handleCreateClient} className="flex-1 px-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-black text-xs uppercase tracking-widest">Register</button>
                </div>
             </div>
           </div>
