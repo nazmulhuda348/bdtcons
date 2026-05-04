@@ -17,6 +17,8 @@ import { TransferLedger } from './components/TransferLedger'; // 🔴 নতু�
 import { Lock, User as UserIcon, ShieldAlert, Loader2, Database } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { User } from './types'; 
+import { PropertyInventory } from './components/PropertyInventory';
+import { PropertySales } from './components/PropertySales';
 
 const LoginPage: React.FC = () => {
   const { users, setCurrentUser, isLoading } = useAppContext();
@@ -115,6 +117,8 @@ const MainApp: React.FC = () => {
   const renderContent = () => {
     switch(activeTab) {
       case 'dashboard': return <Dashboard />;
+      case 'property_inventory': return <PropertyInventory />;
+      case 'property_sales': return <PropertySales />;
       case 'deposit': return <MoneyDeposit />;
       case 'ledger': return <Ledger />;
       case 'treasury': return <CashManagement />;
@@ -127,7 +131,9 @@ const MainApp: React.FC = () => {
       case 'admin': return <AdminPanel />;
       case 'sync': return <SmartSync />;
       case 'backup': return <Backup />;
+
       default: return <Dashboard />;
+
     }
   };
 

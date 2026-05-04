@@ -3,7 +3,9 @@ import { useAppContext } from '../AppContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { 
   LayoutDashboard, BookOpen, BarChart2, Settings, LogOut, Menu,
-  Database, Search, Users, Wallet, UserCircle, Truck, MessageSquare, X, DollarSign, PlusCircle, FileText, ArrowRightLeft
+  Database, Search, Users, Wallet, UserCircle, Truck, MessageSquare, 
+  X, DollarSign, PlusCircle, FileText, ArrowRightLeft,
+  Building, ShoppingCart 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -23,23 +25,29 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Client Registry রিমুভ করে বাকি মেনুর আইটেমগুলো রাখা হয়েছে এবং Transfer History যোগ করা হয়েছে
+  // 🔴 আপডেট করা মেনু লিস্ট এবং পারমিশন লজিক
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: true },
     { id: 'ledger', label: 'Ledger', icon: BookOpen, visible: true }, 
-    { id: 'deposit', label: 'Deposit & Receipt', icon: DollarSign, visible: hasPermission('deposit_receipt') },
+    { id: 'deposit', label: 'Deposit & Receipt', icon: DollarSign, visible: hasPermission('deposit_receipt') || isAdmin },
     
-    { id: 'treasury', label: 'Cash Management', icon: Wallet, visible: hasPermission('cash_management') },
-    // 🔴 Transfer History (TransferLedger) মেনুটি এখানে যোগ করা হলো
-    { id: 'transfer_ledger', label: 'Transfer History', icon: ArrowRightLeft, visible: hasPermission('cash_management') || isAdmin },
-    { id: 'partners', label: 'Partners', icon: UserCircle, visible: hasPermission('partners') },
-    { id: 'sync', label: 'Smart Sync', icon: PlusCircle, visible: hasPermission('smart_sync') },
+    { id: 'treasury', label: 'Cash Management', icon: Wallet, visible: hasPermission('cash_management') || isAdmin },
+    { id: 'transfer_ledger', label: 'Transfer History', icon: ArrowRightLeft, visible: hasPermission('transfer_history') || isAdmin },
     
-    { id: 'suppliers', label: 'Suppliers', icon: Truck, visible: isAdmin || isManager }, 
-    { id: 'leads', label: 'Lead Pipeline', icon: Search, visible: hasPermission('leads_pipeline') },
-    { id: 'marketing', label: 'Marketing', icon: MessageSquare, visible: hasPermission('marketing') },
+    { id: 'partners', label: 'Partners', icon: UserCircle, visible: hasPermission('partners') || isAdmin },
     
-    { id: 'insights', label: 'Insights', icon: BarChart2, visible: true },
-    { id: 'admin', label: 'Admin Panel', icon: Settings, visible: hasPermission('admin_panel') },
+    // 🔴 রিয়েল এস্টেট মডিউল
+    { id: 'property_inventory', label: 'Property', icon: Building, visible: hasPermission('property_inventory') || isAdmin },
+    { id: 'property_sales', label: 'Sales & Booking', icon: ShoppingCart, visible: hasPermission('property_sales') || isAdmin },
+    
+    { id: 'suppliers', label: 'Supply & Stock', icon: Truck, visible: hasPermission('suppliers_inventory') || isAdmin }, 
+    
+    { id: 'leads', label: 'Lead Pipeline', icon: Search, visible: hasPermission('leads_pipeline') || isAdmin },
+    { id: 'marketing', label: 'Marketing', icon: MessageSquare, visible: hasPermission('marketing') || isAdmin },
+    
+    { id: 'sync', label: 'Smart Sync', icon: PlusCircle, visible: hasPermission('smart_sync') || isAdmin },
+    { id: 'insights', label: 'Insights', icon: BarChart2, visible: hasPermission('insights') || isAdmin },
+    { id: 'admin', label: 'Admin Panel', icon: Settings, visible: hasPermission('admin_panel') || isAdmin },
     { id: 'backup', label: 'Backup', icon: Database, visible: isAdmin },
   ];
 

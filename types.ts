@@ -21,6 +21,14 @@ export interface Project {
   name: string;
   serviceMarkup: number;
   description?: string;
+  
+  // ==========================================
+  // 🔴 NEW: Real Estate & Land Properties
+  // ==========================================
+  totalShares?: number;          // প্রজেক্টের মোট শেয়ার সংখ্যা
+  targetSharePrice?: number;     // প্রতি শেয়ারের প্রাথমিক টার্গেট মূল্য
+  totalLandCost?: number;        // জমির মোট ক্রয়মূল্য (খরচ)
+  landArea?: string;             // জমির পরিমাণ (যেমন: '10 Katha')
 }
 
 export interface Client {
@@ -51,9 +59,6 @@ export enum AccountId {
   MANAGER = 'MANAGER'
 }
 
-/** * 🔴 নতুন পরিবর্তন: ব্যাংক ইন্টারফেস যুক্ত করা হয়েছে 
- * এটি আপনাকে আপনার প্রয়োজন মতো ব্যাংক অ্যাকাউন্ট তৈরি করতে সাহায্য করবে।
- */
 export interface Bank {
   id: string;
   name: string;
@@ -68,7 +73,7 @@ export interface Transaction {
   amount: number;
   categoryId: string;
   accountId: AccountId;
-  bankId?: string;       // 🔴 নতুন পরিবর্তন: নির্দিষ্ট ব্যাংক ট্র্যাক করার জন্য
+  bankId?: string;       
   clientId?: string | null;
   partnerId?: string | null;
   type: 'deposit' | 'expense';
@@ -85,8 +90,8 @@ export interface InternalTransfer {
   amount: number;
   note: string;
   partnerId?: string;
-  fromBankId?: string; // 🔴 নতুন যুক্ত করা হলো
-  toBankId?: string;   // 🔴 নতুন যুক্ত করা হলো
+  fromBankId?: string; 
+  toBankId?: string;   
 }
 
 export enum LeadStatus {
@@ -118,9 +123,6 @@ export interface Lead {
   createdByUserId?: string;
 }
 
-// ==========================================
-// NEW INVENTORY & SUPPLIER TYPES
-// ==========================================
 export interface Supplier {
   id: string;
   name: string;
@@ -149,19 +151,79 @@ export interface InventoryLog {
   linkedTransactionId?: string;
 }
 
+// ==========================================
+// 🔴 NEW: Real Estate ERP Interfaces
+// ==========================================
+
+export enum UnitStatus {
+  AVAILABLE = 'AVAILABLE',
+  BOOKED = 'BOOKED',
+  SOLD = 'SOLD'
+}
+
+// ফ্ল্যাট, দোকান বা প্লটের ইনভেন্টরি
+export interface InventoryUnit {
+  id: string;
+  projectId: string;
+  unitName: string;      // e.g., Flat A1, Shop 1
+  sizeSqFt: number;      // স্কয়ার ফিট
+  ratePerSqFt: number;   // প্রতি স্কয়ার ফিটের দাম
+  parkingCharge?: number;
+  utilityCharge?: number;
+  status: UnitStatus;
+}
+
+// শেয়ার বা ফ্ল্যাট বিক্রির চুক্তি (Sales & Booking)
+export type SaleType = 'SHARE' | 'UNIT';
+
+export interface SalesAgreement {
+  id: string;
+  projectId: string;
+  clientId: string;
+  saleType: SaleType;
+  date: string;
+  
+  unitId?: string;           // যদি ফ্ল্যাট বিক্রি হয়
+  numberOfShares?: number;   // যদি শেয়ার বিক্রি হয়
+  
+  agreedPrice: number;       // Actual Sold Price (যে দামে বিক্রি হলো)
+  downPayment?: number;      // বুকিং মানি বা ডাউনপেমেন্ট
+  installmentCount?: number; // কিস্তির সংখ্যা
+  note?: string;
+}
+
+// পার্টনারদের জমি কেনার ইনভেস্টমেন্ট ট্র্যাক করার জন্য
+export interface PartnerInvestment {
+  id: string;
+  projectId: string;
+  partnerId: string;
+  date: string;
+  investedAmount: number;
+  note?: string;
+}
+
+// ==========================================
+// App State Configuration
+// ==========================================
 export interface AppState {
   currentUser: User | null;
   users: User[];
   projects: Project[];
   clients: Client[];
   partners: Partner[];
-  banks: Bank[];                   // 🔴 নতুন পরিবর্তন: ব্যাংক লিস্ট রাখার জন্য
+  banks: Bank[];                   
   suppliers: Supplier[];
   materials: Material[];
   inventoryLogs: InventoryLog[];
   leads: Lead[];
   categories: Category[];
   transactions: Transaction[];
+  
+  // 🔴 NEW STATE VARIABLES
+  inventoryUnits: InventoryUnit[];
+  salesAgreements: SalesAgreement[];
+  partnerInvestments: PartnerInvestment[];
+
   accounts: Record<AccountId, number>;
   transfers: InternalTransfer[];
   selectedProjectId: string | 'all';

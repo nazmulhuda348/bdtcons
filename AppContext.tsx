@@ -3,7 +3,9 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { 
   AppState, User, Transaction, Project, Client, Partner, Supplier, 
   Category, Lead, AccountId, InternalTransfer, UserRole, 
-  LeadStatus, Material, InventoryLog, Bank 
+  LeadStatus, Material, InventoryLog, Bank,
+  // 🔴 NEW IMPORTS
+  InventoryUnit, SalesAgreement, PartnerInvestment 
 } from './types';
 import { 
   INITIAL_USERS, INITIAL_PROJECTS, INITIAL_CLIENTS, 
@@ -52,6 +54,15 @@ interface AppContextType extends AppState {
   updateCategories: (categories: Category[] | ((prev: Category[]) => Category[])) => void;
   addLead: (lead: Lead) => Promise<void>;
   updateLeadItem: (lead: Lead) => Promise<void>;
+  
+  // 🔴 NEW UPDATERS FOR REAL ESTATE ERP
+  updateInventoryUnits: (units: InventoryUnit[] | ((prev: InventoryUnit[]) => InventoryUnit[])) => void;
+  deleteInventoryUnit: (id: string) => Promise<void>;
+  updateSalesAgreements: (agreements: SalesAgreement[] | ((prev: SalesAgreement[]) => SalesAgreement[])) => void;
+  deleteSalesAgreement: (id: string) => Promise<void>;
+  updatePartnerInvestments: (investments: PartnerInvestment[] | ((prev: PartnerInvestment[]) => PartnerInvestment[])) => void;
+  deletePartnerInvestment: (id: string) => Promise<void>;
+
   leadCategories: string[];
   updateLeadCategories: (cats: string[] | ((prev: string[]) => string[])) => void;
   availableLeadCategories: string[];
@@ -60,7 +71,6 @@ interface AppContextType extends AppState {
   importData: (json: string) => void;
   transferCash: (transfer: InternalTransfer) => Promise<void>;
   
-  // 🔴 Client to Client Transfer Function
   transferClientToClient: (senderId: string, receiverId: string, amount: number, projectId: string, note: string) => Promise<void>;
   
   partnerBalances: Record<string, number>;
@@ -92,6 +102,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transfers, setTransfers] = useState<InternalTransfer[]>([]);
 
+  // 🔴 NEW STATES
+  const [inventoryUnits, setInventoryUnits] = useState<InventoryUnit[]>([]);
+  const [salesAgreements, setSalesAgreements] = useState<SalesAgreement[]>([]);
+  const [partnerInvestments, setPartnerInvestments] = useState<PartnerInvestment[]>([]);
+
   const [leadCategories, setLeadCategories] = useState<string[]>(() => {
     const saved = safeGetStorage('bdt_lead_cats'); return saved ? JSON.parse(saved) : ['General', 'Land', 'Software'];
   });
@@ -118,6 +133,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUsers(INITIAL_USERS); setProjects(INITIAL_PROJECTS); setClients(INITIAL_CLIENTS);
       setCategories(INITIAL_CATEGORIES); setTransactions(INITIAL_TRANSACTIONS); setLeads(INITIAL_LEADS);
       setSuppliers([]); setMaterials([]); setInventoryLogs([]); setBanks([]);
+      setInventoryUnits([]); setSalesAgreements([]); setPartnerInvestments([]);
       setIsLoading(false); return;
     }
     setIsLoading(true);
@@ -129,7 +145,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return data;
       };
       
-      const [u, p, c, cat, pt, b, s, mat, logs, l, t, tr] = await Promise.all([
+      const [u, p, c, cat, pt, b, s, mat, logs, l, t, tr, invUnits, sales, pInvs] = await Promise.all([
         fetchOrSeed('users', INITIAL_USERS), 
         fetchOrSeed('projects', INITIAL_PROJECTS), 
         fetchOrSeed('clients', INITIAL_CLIENTS),
@@ -141,12 +157,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fetchOrSeed('inventory_logs', []),
         fetchOrSeed('leads', INITIAL_LEADS), 
         fetchOrSeed('transactions', INITIAL_TRANSACTIONS), 
-        fetchOrSeed('transfers', [])
+        fetchOrSeed('transfers', []),
+        fetchOrSeed('inventory_units', []),         // 🔴 New Fetch
+        fetchOrSeed('sales_agreements', []),        // 🔴 New Fetch
+        fetchOrSeed('partner_investments', [])      // 🔴 New Fetch
       ]);
       
       setUsers(u); setProjects(p); setClients(c); setCategories(cat); setPartners(pt); setBanks(b);
       setSuppliers(s); setMaterials(mat); setInventoryLogs(logs); 
       setLeads(l); setTransactions(t); setTransfers(tr);
+      setInventoryUnits(invUnits); setSalesAgreements(sales); setPartnerInvestments(pInvs);
     } catch (err) { console.error("Cloud Error:", err); } finally { setIsLoading(false); }
   }, []);
 
@@ -206,7 +226,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setter((prev: any) => prev.filter((item: any) => item.id !== id));
   };
 
-  // 🔴 Client to Client Transfer Logic
   const transferClientToClient = useCallback(async (senderId: string, receiverId: string, amount: number, projectId: string, note: string) => {
     if (!currentUser) return;
 
@@ -222,8 +241,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: `P2P Transfer to ${receiverClient?.name} ${note ? `(${note})` : ''}`,
       amount: amount,
       categoryId: catId,
-      accountId: AccountId.MANAGER, // জিরো-সাম করার জন্য ভার্চুয়াল নোড ব্যবহার
-      type: 'expense', // প্রেরকের লেজার থেকে মাইনাস
+      accountId: AccountId.MANAGER, 
+      type: 'expense', 
       createdByUserId: currentUser.id,
       auditUser: currentUser.name || 'System'
     };
@@ -236,8 +255,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: `P2P Received from ${senderClient?.name} ${note ? `(${note})` : ''}`,
       amount: amount,
       categoryId: catId,
-      accountId: AccountId.MANAGER, // জিরো-সাম করার জন্য ভার্চুয়াল নোড ব্যবহার
-      type: 'deposit', // প্রাপকের লেজারে প্লাস
+      accountId: AccountId.MANAGER, 
+      type: 'deposit', 
       createdByUserId: currentUser.id,
       auditUser: currentUser.name || 'System'
     };
@@ -300,12 +319,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       leads, updateLeads: genericUpdater('leads', setLeads), deleteLead: genericDeleter('leads', setLeads),
       addLead, updateLeadItem,
       categories, updateCategories: genericUpdater('categories', setCategories),
+      
+      // 🔴 NEW EXPORTS FOR REAL ESTATE ERP
+      inventoryUnits, updateInventoryUnits: genericUpdater('inventory_units', setInventoryUnits), deleteInventoryUnit: genericDeleter('inventory_units', setInventoryUnits),
+      salesAgreements, updateSalesAgreements: genericUpdater('sales_agreements', setSalesAgreements), deleteSalesAgreement: genericDeleter('sales_agreements', setSalesAgreements),
+      partnerInvestments, updatePartnerInvestments: genericUpdater('partner_investments', setPartnerInvestments), deletePartnerInvestment: genericDeleter('partner_investments', setPartnerInvestments),
+
       leadCategories, updateLeadCategories: setLeadCategories, availableLeadCategories, allProspects,
       transactions, setTransactions, addTransaction, deleteTransaction, updateTransaction,
       accounts, transfers, transferCash: async (t) => { if (supabase) await supabase.from('transfers').insert([t]); setTransfers(prev => [...prev, t]); }, 
       partnerBalances, selectedProjectId, setSelectedProjectId,
       globalMarkupOverride, setGlobalMarkupOverride, importData: () => {}, viewAllMode, setViewAllMode, syncToCloud, isLoading,
-      transferClientToClient // 🔴 Exported new function
+      transferClientToClient
     }}>
       {children}
     </AppContext.Provider>
