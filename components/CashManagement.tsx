@@ -11,24 +11,24 @@ import { motion, AnimatePresence } from 'framer-motion';
 const MotionDiv = motion.div as any;
 
 export const CashManagement: React.FC = () => {
-  // 🔴 Added clients, projects and transferClientToClient
   const { accounts, transfers, transferCash, partners, banks, updateBanks, deleteBank, clients, projects, transferClientToClient } = useAppContext();
   
   const [newBankName, setNewBankName] = useState('');
   const [newBankAccount, setNewBankAccount] = useState('');
   
+  // 🔴 Updated State to hold two distinct partners
   const [transferForm, setTransferForm] = useState({
     from: AccountId.BANK,
     to: AccountId.PARTNER,
     fromBankId: '', 
     toBankId: '',   
+    fromPartnerId: '', // 🔴 Source Partner
+    toPartnerId: '',   // 🔴 Destination Partner
     amount: '',
     note: '',
-    partnerId: '',
     date: new Date().toISOString().split('T')[0]
   });
 
-  // 🔴 Client to Client Transfer State
   const [clientTransferForm, setClientTransferForm] = useState({
     senderId: '',
     receiverId: '',
@@ -57,10 +57,15 @@ export const CashManagement: React.FC = () => {
     const amount = parseFloat(transferForm.amount);
     if (isNaN(amount) || amount <= 0) return alert('Invalid amount');
 
+    // Validation
     if (transferForm.from === AccountId.BANK && !transferForm.fromBankId) return alert('Please select the Source Bank.');
     if (transferForm.to === AccountId.BANK && !transferForm.toBankId) return alert('Please select the Destination Bank.');
-    if (transferForm.from === AccountId.PARTNER && !transferForm.partnerId) return alert('Please select a Partner.');
-    if (transferForm.to === AccountId.PARTNER && !transferForm.partnerId) return alert('Please select a Partner.');
+    if (transferForm.from === AccountId.PARTNER && !transferForm.fromPartnerId) return alert('Please select the Source Partner.');
+    if (transferForm.to === AccountId.PARTNER && !transferForm.toPartnerId) return alert('Please select the Destination Partner.');
+    
+    if (transferForm.from === AccountId.PARTNER && transferForm.to === AccountId.PARTNER && transferForm.fromPartnerId === transferForm.toPartnerId) {
+      return alert('Source and Destination partners cannot be the same person!');
+    }
 
     const fromBank = banks.find(b => b.id === transferForm.fromBankId);
     const toBank = banks.find(b => b.id === transferForm.toBankId);
@@ -72,31 +77,65 @@ export const CashManagement: React.FC = () => {
       enhancedNote = `[${fromStr} ➡️ ${toStr}] ${transferForm.note}`;
     }
 
-    const newTransfer: InternalTransfer = {
-      id: Math.random().toString(36).substr(2, 9),
-      date: transferForm.date,
-      fromAccount: transferForm.from,
-      toAccount: transferForm.to,
-      fromBankId: transferForm.from === AccountId.BANK ? transferForm.fromBankId : undefined,
-      toBankId: transferForm.to === AccountId.BANK ? transferForm.toBankId : undefined,
-      amount,
-      note: enhancedNote,
-      partnerId: transferForm.partnerId === "" ? undefined : transferForm.partnerId 
-    };
+    // 🔴 Partner to Partner Split Logic
+    if (transferForm.from === AccountId.PARTNER && transferForm.to === AccountId.PARTNER) {
+        const fromPartner = partners.find(p => p.id === transferForm.fromPartnerId);
+        const toPartner = partners.find(p => p.id === transferForm.toPartnerId);
 
-    await transferCash(newTransfer);
+        // Transaction 1: Debit Sender
+        const tx1: InternalTransfer = {
+          id: `tf_${Date.now()}_1`,
+          date: transferForm.date,
+          fromAccount: AccountId.PARTNER,
+          toAccount: AccountId.MANAGER, // Bridged through Manager Fund
+          amount,
+          note: `[P2P] Transfer to ${toPartner?.name} ${transferForm.note ? `- ${transferForm.note}` : ''}`,
+          partnerId: transferForm.fromPartnerId
+        };
+
+        // Transaction 2: Credit Receiver
+        const tx2: InternalTransfer = {
+          id: `tf_${Date.now()}_2`,
+          date: transferForm.date,
+          fromAccount: AccountId.MANAGER, // Bridged through Manager Fund
+          toAccount: AccountId.PARTNER,
+          amount,
+          note: `[P2P] Received from ${fromPartner?.name} ${transferForm.note ? `- ${transferForm.note}` : ''}`,
+          partnerId: transferForm.toPartnerId
+        };
+
+        await transferCash(tx1);
+        await transferCash(tx2);
+    } else {
+        // Normal Single Transfer
+        const activePartnerId = transferForm.from === AccountId.PARTNER ? transferForm.fromPartnerId : (transferForm.to === AccountId.PARTNER ? transferForm.toPartnerId : undefined);
+        
+        const newTransfer: InternalTransfer = {
+          id: `tf_${Date.now()}`,
+          date: transferForm.date,
+          fromAccount: transferForm.from,
+          toAccount: transferForm.to,
+          fromBankId: transferForm.from === AccountId.BANK ? transferForm.fromBankId : undefined,
+          toBankId: transferForm.to === AccountId.BANK ? transferForm.toBankId : undefined,
+          amount,
+          note: enhancedNote,
+          partnerId: activePartnerId 
+        };
+
+        await transferCash(newTransfer);
+    }
     
     setTransferForm({ 
       ...transferForm, 
       amount: '', 
       note: '', 
-      partnerId: '', 
       fromBankId: '', 
-      toBankId: '' 
+      toBankId: '',
+      fromPartnerId: '',
+      toPartnerId: '' 
     });
   };
 
-  // 🔴 Client to Client Action Handler
   const handleClientTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(clientTransferForm.amount);
@@ -192,10 +231,12 @@ export const CashManagement: React.FC = () => {
           
           <form onSubmit={handleTransfer} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900/30 p-6 rounded-3xl border border-slate-700/50">
+               
+               {/* 🔴 FROM NODE */}
                <div className="space-y-3">
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">From Node (উৎস)</label>
-                   <select className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.from} onChange={e => setTransferForm({...transferForm, from: e.target.value as AccountId, fromBankId: ''})}>
+                   <select className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.from} onChange={e => setTransferForm({...transferForm, from: e.target.value as AccountId, fromBankId: '', fromPartnerId: ''})}>
                       <option value={AccountId.BANK}>Central Bank</option>
                       <option value={AccountId.MANAGER}>Manager Fund</option>
                       <option value={AccountId.PARTNER}>Partner Stakeholder</option>
@@ -206,18 +247,26 @@ export const CashManagement: React.FC = () => {
                      <label className="text-[9px] font-black text-amber-400 uppercase tracking-widest ml-1 mb-1 block">Select Source Bank</label>
                      <select required className="w-full bg-slate-950 border border-amber-400/30 rounded-2xl px-5 py-3 text-white font-bold outline-none" value={transferForm.fromBankId} onChange={e => setTransferForm({...transferForm, fromBankId: e.target.value})}>
                         <option value="">-- Choose Bank --</option>
-                        {banks.map(b => (
-                          <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>
-                        ))}
+                        {banks.map(b => <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>)}
+                     </select>
+                   </MotionDiv>
+                 )}
+                 {transferForm.from === AccountId.PARTNER && (
+                   <MotionDiv initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                     <label className="text-[9px] font-black text-rose-400 uppercase tracking-widest ml-1 mb-1 block">Select Source Partner</label>
+                     <select required className="w-full bg-slate-950 border border-rose-500/30 rounded-2xl px-5 py-3 text-white font-bold outline-none" value={transferForm.fromPartnerId} onChange={e => setTransferForm({...transferForm, fromPartnerId: e.target.value})}>
+                        <option value="">-- Choose Partner --</option>
+                        {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                      </select>
                    </MotionDiv>
                  )}
                </div>
 
+               {/* 🔴 TO NODE */}
                <div className="space-y-3">
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">To Node (গন্তব্য)</label>
-                   <select className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.to} onChange={e => setTransferForm({...transferForm, to: e.target.value as AccountId, toBankId: ''})}>
+                   <select className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.to} onChange={e => setTransferForm({...transferForm, to: e.target.value as AccountId, toBankId: '', toPartnerId: ''})}>
                       <option value={AccountId.BANK}>Central Bank</option>
                       <option value={AccountId.MANAGER}>Manager Fund</option>
                       <option value={AccountId.PARTNER}>Partner Stakeholder</option>
@@ -228,24 +277,21 @@ export const CashManagement: React.FC = () => {
                      <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest ml-1 mb-1 block">Select Destination Bank</label>
                      <select required className="w-full bg-slate-950 border border-emerald-400/30 rounded-2xl px-5 py-3 text-white font-bold outline-none" value={transferForm.toBankId} onChange={e => setTransferForm({...transferForm, toBankId: e.target.value})}>
                         <option value="">-- Choose Bank --</option>
-                        {banks.map(b => (
-                          <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>
-                        ))}
+                        {banks.map(b => <option key={b.id} value={b.id}>{b.name} {b.accountNumber ? `(${b.accountNumber})` : ''}</option>)}
+                     </select>
+                   </MotionDiv>
+                 )}
+                 {transferForm.to === AccountId.PARTNER && (
+                   <MotionDiv initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                     <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest ml-1 mb-1 block">Select Destination Partner</label>
+                     <select required className="w-full bg-slate-950 border border-emerald-500/30 rounded-2xl px-5 py-3 text-white font-bold outline-none" value={transferForm.toPartnerId} onChange={e => setTransferForm({...transferForm, toPartnerId: e.target.value})}>
+                        <option value="">-- Choose Partner --</option>
+                        {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                      </select>
                    </MotionDiv>
                  )}
                </div>
             </div>
-
-            { (transferForm.from === AccountId.PARTNER || transferForm.to === AccountId.PARTNER) && (
-              <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
-                <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest ml-1">Attributed Partner (পার্টনারের নাম)</label>
-                <select required className="w-full bg-slate-900 border border-amber-400/20 rounded-2xl px-5 py-4 text-white font-bold outline-none" value={transferForm.partnerId} onChange={e => setTransferForm({...transferForm, partnerId: e.target.value})}>
-                   <option value="">-- Choose Partner --</option>
-                   {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </MotionDiv>
-            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div className="space-y-2">
@@ -272,7 +318,7 @@ export const CashManagement: React.FC = () => {
       </div>
 
       {/* ==========================================
-          🔴 Client to Client Transfer Section 🔴
+          🔴 Client to Client Transfer Section
       ========================================== */}
       <div className="bg-slate-800 rounded-[2.5rem] border border-slate-700 p-8 shadow-2xl mt-8">
         <div className="flex items-center space-x-4 mb-8">
