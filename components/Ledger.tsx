@@ -2,8 +2,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../AppContext';
 import { 
   Search, Plus, Image as ImageIcon, Trash2, X, ChevronLeft, ChevronRight, 
-  Tag, Edit2, ArrowUpRight, ArrowDownRight, Check, Loader2, AlertTriangle, 
-  UserPlus, FolderPlus, Wallet, Landmark, Users
+  Edit2, ArrowUpRight, ArrowDownRight, Check, Loader2, AlertTriangle, 
+  UserPlus, FolderPlus, Wallet, Landmark, Users, Package, PackagePlus
 } from 'lucide-react';
 import { UserRole, Transaction, AccountId, Category, Client, Bank, Partner } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,7 +14,11 @@ import { usePermissions } from '../hooks/usePermissions';
 const MotionDiv = motion.div as any;
 
 export const Ledger: React.FC = () => {
-  const { transactions, deleteTransaction, selectedProjectId, projects, categories, clients, banks, partners, currentUser, viewAllMode } = useAppContext();
+  const { 
+    transactions, deleteTransaction, selectedProjectId, projects, categories, 
+    clients, banks, partners, currentUser, viewAllMode,
+    inventoryLogs = [], updateInventoryLogs // 🔴 Added Inventory context for deletion sync
+  } = useAppContext();
   
   const { isAdmin, hasPermission } = usePermissions();
   
@@ -61,6 +65,23 @@ export const Ledger: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedProjectId, viewAllMode]);
+
+  // 🔴 NEW: Custom Delete Handler for Smart Sync Deletion
+  const handleDelete = async (transactionId: string) => {
+    if(window.confirm("Are you sure you want to delete this entry? Any associated site stock will also be reversed.")){
+      try {
+        // 1. Delete the financial transaction
+        await deleteTransaction(transactionId);
+        
+        // 2. Automatically delete the linked inventory log (if any exists)
+        if(updateInventoryLogs) {
+          await updateInventoryLogs((prev: any) => prev.filter((l: any) => l.linkedTransactionId !== transactionId));
+        }
+      } catch (err) {
+        console.error("Deletion failed", err);
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -115,11 +136,18 @@ export const Ledger: React.FC = () => {
                       <span className="text-white font-bold text-sm tracking-tight">
                         {t.type === 'deposit' ? getClientName(t.clientId, 'deposit') : (t.description || 'No Description')}
                       </span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest bg-slate-900 px-2 py-1 rounded border border-slate-700">
                           {(categories || []).find(c => c.id === t.categoryId)?.name || 'Misc'}
                         </span>
-                        <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider flex items-center gap-1">
+                        
+                        {(t as any).quantity > 0 && (
+                          <span className="text-[9px] text-emerald-400 uppercase font-black tracking-widest bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 flex items-center gap-1">
+                            <Package size={10} /> {(t as any).quantity} {(t as any).unit} Added
+                          </span>
+                        )}
+
+                        <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider flex items-center gap-1 ml-auto">
                           <span className="w-1 h-1 rounded-full bg-slate-700" />
                           By {t.auditUser || 'System'}
                         </span>
@@ -132,7 +160,6 @@ export const Ledger: React.FC = () => {
                          {t.accountId}
                        </span>
                        
-                       {/* 🔴 লেজার টেবিলে ব্যাংক ও অ্যাকাউন্ট নাম্বার দেখানোর লজিক */}
                        {t.accountId === AccountId.BANK && t.bankId && (
                          <span className="text-[8px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-1 text-center whitespace-nowrap">
                            <Landmark size={10} /> 
@@ -155,16 +182,15 @@ export const Ledger: React.FC = () => {
                     <div className="flex items-center justify-center space-x-2">
                       {t.attachment && <button onClick={() => setViewingAttachment(t.attachment!)} className="p-2 text-slate-500 hover:text-amber-400 transition-all"><ImageIcon size={16} /></button>}
                       
-                      {/* EDIT BUTTON */}
                       {(isAdmin || (hasPermission('edit_ledger') && t.createdByUserId === currentUser?.id)) && (
                         <button onClick={() => setEditingTransaction(t)} className="p-2 text-slate-500 hover:text-blue-400 transition-all">
                           <Edit2 size={16}/>
                         </button>
                       )}
                       
-                      {/* DELETE BUTTON */}
+                      {/* 🔴 Updated to use the custom handleDelete function */}
                       {isAdmin && (
-                        <button onClick={() => deleteTransaction(t.id)} className="p-2 text-slate-500 hover:text-red-500 transition-all">
+                        <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-500 hover:text-red-500 transition-all">
                           <Trash2 size={16}/>
                         </button>
                       )}
@@ -228,7 +254,11 @@ export const Ledger: React.FC = () => {
 // TRANSACTION FORM MODAL
 // ==========================================
 const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transaction, defaultType: 'deposit' | 'expense' }> = ({ onClose, transaction, defaultType }) => {
-  const { projects, categories, updateCategories, clients, updateClients, banks, updateBanks, partners, addTransaction, updateTransaction, selectedProjectId, currentUser } = useAppContext();
+  const { 
+    projects, categories, updateCategories, clients, updateClients, banks, updateBanks, 
+    partners, addTransaction, updateTransaction, selectedProjectId, currentUser,
+    materials = [], updateMaterials, inventoryLogs = [], updateInventoryLogs 
+  } = useAppContext();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -236,11 +266,13 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
 
   const [showQuickAddCategory, setShowQuickAddCategory] = useState(false);
   const [showQuickAddClient, setShowQuickAddClient] = useState(false);
-  
-  // 🔴 কুইক ব্যাংক অ্যাড এর জন্য অ্যাকাউন্ট নাম্বার যুক্ত করা হয়েছে
   const [showQuickAddBank, setShowQuickAddBank] = useState(false);
   const [quickAddName, setQuickAddName] = useState('');
   const [quickAddAccount, setQuickAddAccount] = useState(''); 
+
+  const [addToStock, setAddToStock] = useState(!!(transaction as any)?.quantity);
+  const [stockQty, setStockQty] = useState((transaction as any)?.quantity?.toString() || '');
+  const [stockUnit, setStockUnit] = useState((transaction as any)?.unit || 'KG');
 
   const [form, setForm] = useState({
     date: transaction?.date || new Date().toISOString().split('T')[0],
@@ -285,7 +317,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
     setShowQuickAddClient(false);
   };
 
-  // 🔴 কুইক ব্যাংক অ্যাড লজিক (অ্যাকাউন্ট নাম্বার সহ)
   const handleQuickAddBank = async () => {
     if (!quickAddName.trim()) return;
     const newBank: Bank = { 
@@ -322,15 +353,20 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
     setErrorMsg(null);
 
     const auditName = transaction?.auditUser || currentUser?.name || 'Unknown User';
+    const finalQuantity = addToStock && stockQty ? parseFloat(stockQty) : 0;
+    const txId = transaction?.id || Math.random().toString(36).substr(2, 9);
 
     const payload = { 
       ...form, 
+      id: txId,
       amount: parseFloat(form.amount) || 0,
       clientId: form.clientId === "" ? null : form.clientId,
       partnerId: form.accountId === AccountId.PARTNER ? form.partnerId : null,
       bankId: form.accountId === AccountId.BANK ? form.bankId : undefined,
       attachment: form.attachment === "" ? null : form.attachment,
-      auditUser: auditName
+      auditUser: auditName,
+      quantity: finalQuantity, 
+      unit: addToStock ? stockUnit : undefined 
     };
     
     try {
@@ -338,12 +374,54 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
         await updateTransaction({ ...transaction, ...payload } as any);
       } else {
         await addTransaction({ 
-          id: Math.random().toString(36).substr(2, 9), 
           ...payload, 
-          auditUser: auditName, 
           createdByUserId: currentUser?.id || 'sys' 
         } as any);
       }
+
+      if (form.type === 'expense' && addToStock && finalQuantity > 0) {
+        const categoryName = categories.find(c => c.id === form.categoryId)?.name || 'Misc Material';
+        
+        let material = materials.find((m: any) => m.name.toLowerCase() === categoryName.toLowerCase());
+        
+        if (!material) {
+          material = { id: `m_${Date.now()}`, name: categoryName, unit: stockUnit };
+          await updateMaterials((prev: any) => [...prev, material]);
+        }
+
+        const existingLog = inventoryLogs.find((l: any) => l.linkedTransactionId === txId);
+        
+        if (existingLog) {
+          const updatedLog = {
+            ...existingLog,
+            date: form.date,
+            projectId: form.projectId,
+            materialId: material.id,
+            quantity: finalQuantity,
+            totalCost: payload.amount,
+          };
+          await updateInventoryLogs((prev: any) => prev.map((l: any) => l.id === existingLog.id ? updatedLog : l));
+        } else {
+          const newLog = {
+            id: `inv_${Date.now()}`,
+            date: form.date,
+            projectId: form.projectId,
+            type: 'IN',
+            materialId: material.id,
+            quantity: finalQuantity,
+            note: `Auto-added from Ledger: ${form.description}`,
+            totalCost: payload.amount,
+            linkedTransactionId: txId
+          };
+          await updateInventoryLogs((prev: any) => [...prev, newLog]);
+        }
+      } else if (transaction && (!addToStock || finalQuantity <= 0)) {
+        const existingLog = inventoryLogs.find((l: any) => l.linkedTransactionId === txId);
+        if (existingLog) {
+           await updateInventoryLogs((prev: any) => prev.filter((l: any) => l.id !== existingLog.id));
+        }
+      }
+
       onClose();
     } catch (err: any) {
       setErrorMsg(err.message || "Persistence Failure");
@@ -384,7 +462,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
             </div>
           </div>
 
-          {/* ডিপোজিটর নাম ড্রপডাউন */}
           {form.type === 'deposit' && (
             <div className="space-y-1">
               <div className="flex justify-between items-center mb-1">
@@ -427,7 +504,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
               </select>
             </div>
 
-            {/* 🔴 ব্যাংক ড্রপডাউন (ব্যাংকের নাম ও অ্যাকাউন্ট নাম্বারসহ) 🔴 */}
             {form.accountId === AccountId.BANK && (
               <div className="space-y-1 animate-in slide-in-from-top-2">
                 <div className="flex justify-between items-center mb-1">
@@ -453,7 +529,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
               </div>
             )}
 
-            {/* পার্টনার ড্রপডাউন */}
             {form.accountId === AccountId.PARTNER && (
               <div className="space-y-1 animate-in slide-in-from-top-2">
                 <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest pl-1">Specific Partner (পার্টনারের নাম)</label>
@@ -463,11 +538,6 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
                 </select>
               </div>
             )}
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Audit Memo (Description)</label>
-            <input required type="text" value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Fiscal note detail..." className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-1 focus:ring-amber-400 outline-none" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -495,6 +565,63 @@ const TransactionModal: React.FC<{ onClose: () => void, transaction?: Transactio
                 </select>
               )}
             </div>
+          </div>
+
+          {form.type === 'expense' && (
+            <div className="space-y-4 bg-slate-900/50 p-4 rounded-2xl border border-emerald-500/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <PackagePlus size={16} className="text-emerald-400" />
+                  <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest cursor-pointer" onClick={() => setAddToStock(!addToStock)}>
+                    Add to Site Stock? (সাইট স্টকে যোগ করুন)
+                  </label>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={addToStock} 
+                  onChange={(e) => setAddToStock(e.target.checked)}
+                  className="w-5 h-5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 bg-slate-950 cursor-pointer"
+                />
+              </div>
+              
+              {addToStock && (
+                <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Quantity (পরিমাণ)</label>
+                    <input 
+                      required={addToStock} 
+                      type="number" 
+                      step="0.01" 
+                      className="w-full bg-slate-950 border border-emerald-500/30 rounded-xl px-4 py-3 text-white outline-none font-bold focus:border-emerald-500 transition-all" 
+                      value={stockQty} 
+                      onChange={e => setStockQty(e.target.value)} 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Unit (একক)</label>
+                    <select 
+                      required={addToStock} 
+                      value={stockUnit} 
+                      onChange={e => setStockUnit(e.target.value)} 
+                      className="w-full bg-slate-950 border border-emerald-500/30 rounded-xl px-4 py-3 text-white outline-none font-bold focus:border-emerald-500 transition-all cursor-pointer"
+                    >
+                      <option value="KG">KG</option>
+                      <option value="Bag">Bag</option>
+                      <option value="Ton">Ton</option>
+                      <option value="CFT">CFT</option>
+                      <option value="SFT">SFT</option>
+                      <option value="Nos">Nos</option>
+                      <option value="Ltr">Ltr</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Audit Memo (Description)</label>
+            <input required type="text" value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Fiscal note detail..." className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-5 py-3 text-white focus:ring-1 focus:ring-amber-400 outline-none" />
           </div>
 
           <div className="space-y-2">

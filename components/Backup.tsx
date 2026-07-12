@@ -81,7 +81,6 @@ export const Backup: React.FC = () => {
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       
-      // 1. PROJECT NAME WATERMARK
       try {
         doc.setGState(new (doc as any).GState({opacity: 0.05})); 
         doc.setFontSize(55);
@@ -93,7 +92,6 @@ export const Backup: React.FC = () => {
         console.error("Watermark generation failed", e);
       }
 
-      // 2. PROJECT NAME FOOTER
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
@@ -106,9 +104,6 @@ export const Backup: React.FC = () => {
     }
   };
 
-  /**
-   * 1. EXPORT FOR LEDGER (Standard Format)
-   */
   const handleLedgerPdfExport = () => {
     const { filteredTx, markup, projectName } = getFilteredData();
     const doc = new jsPDF();
@@ -125,13 +120,16 @@ export const Backup: React.FC = () => {
     doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor('#0f172a');
     doc.text("DATE GENERATED:", 14, 48); doc.setFont('helvetica', 'normal'); doc.text(new Date().toLocaleString(), 50, 48);
 
-    const ledgerRows = filteredTx.map(t => [
-      t.date,
-      t.type.toUpperCase(),
-      (categories.find(c => c.id === t.categoryId)?.name || 'MISC').toUpperCase(),
-      t.description.toUpperCase(),
-      `$${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-    ]);
+    const ledgerRows = filteredTx.map(t => {
+      const qtyText = (t as any).quantity ? ` [QTY: ${(t as any).quantity} ${(t as any).unit}]` : '';
+      return [
+        t.date,
+        t.type.toUpperCase(),
+        (categories.find(c => c.id === t.categoryId)?.name || 'MISC').toUpperCase(),
+        t.description.toUpperCase() + qtyText,
+        `$${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+      ];
+    });
 
     doc.setFontSize(10); doc.setTextColor('#0f172a'); doc.text("TRANSACTION LEDGER", 14, 60);
 
@@ -151,7 +149,7 @@ export const Backup: React.FC = () => {
   };
 
   /**
-   * 2. EXPORT FOR DETAILED (Matched EXACTLY to provided images: Colored headers & Project name watermark)
+   * 2. EXPORT FOR DETAILED (Matched EXACTLY with new QTY Column & Total QTY)
    */
   const handleDetailedPdfExport = () => {
     const { filteredTx, markup, projectName } = getFilteredData();
@@ -166,16 +164,15 @@ export const Backup: React.FC = () => {
     const totalCost = rawExpenses * (1 + markup / 100);
     const netBalance = totalDeposits - totalCost;
 
-    // --- EXACT HEADER MATCH (From Image) ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.setTextColor(20, 30, 40); // Dark Slate
+    doc.setTextColor(20, 30, 40);
     doc.text("DETAILED LEDGER REPORT", marginLeft, currentY); 
     
     currentY += 6;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139); // Gray
+    doc.setTextColor(100, 116, 139);
     doc.text(`PROJECT: ${projectName.toUpperCase()}`, marginLeft, currentY); 
     
     currentY += 5;
@@ -184,21 +181,17 @@ export const Backup: React.FC = () => {
     currentY += 8;
     doc.setFont('helvetica', 'bold');
     
-    // Total Deposits (Green)
-    doc.setTextColor(11, 154, 90); // Exact Green from image
+    doc.setTextColor(11, 154, 90); 
     doc.text(`Total Deposits: $${totalDeposits.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, marginLeft, currentY);
     
-    // Total Expenses (Red)
-    doc.setTextColor(216, 31, 74); // Exact Red from image
+    doc.setTextColor(216, 31, 74); 
     doc.text(`Total Expenses: $${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 75, currentY);
     
-    // Net Balance (Blue)
-    doc.setTextColor(20, 133, 198); // Exact Blue from image
+    doc.setTextColor(20, 133, 198); 
     doc.text(`Net Balance: $${netBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 145, currentY);
     
     currentY += 15;
 
-    // Helper to check page break
     const checkPageBreak = (neededSpace: number) => {
         if (currentY + neededSpace > 275) {
             doc.addPage();
@@ -206,7 +199,7 @@ export const Backup: React.FC = () => {
         }
     };
 
-    // --- INCOME/DEPOSITS SECTION ---
+    // --- INCOME/DEPOSITS SECTION (Remains 3 Columns) ---
     const deposits = filteredTx.filter(t => t.type === 'deposit');
     if (deposits.length > 0) {
       doc.setFontSize(12);
@@ -231,7 +224,6 @@ export const Backup: React.FC = () => {
           doc.setTextColor(20, 30, 40);
           doc.text(`Depositor: ${cName.toUpperCase()}`, marginLeft, currentY); 
           
-          // Subtotal aligned to right (Green)
           doc.setTextColor(11, 154, 90); 
           doc.text(`Subtotal: $${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, marginRight, currentY, { align: 'right' });
           currentY += 3;
@@ -247,8 +239,8 @@ export const Backup: React.FC = () => {
               head: [['DATE', 'DESCRIPTION', 'AMOUNT']], 
               body: rows,
               theme: 'plain', 
-              headStyles: { fillColor: '#0b9a5a', textColor: '#ffffff', fontStyle: 'bold', fontSize: 9 }, // Green Header
-              alternateRowStyles: { fillColor: '#f4fdf8' }, // Very faint green alternating row
+              headStyles: { fillColor: '#0b9a5a', textColor: '#ffffff', fontStyle: 'bold', fontSize: 9 }, 
+              alternateRowStyles: { fillColor: '#f4fdf8' }, 
               styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: 0 },
               columnStyles: { 
                   0: { cellWidth: 35 },
@@ -261,7 +253,7 @@ export const Backup: React.FC = () => {
       });
     }
 
-    // --- EXPENDITURES SECTION ---
+    // --- EXPENDITURES SECTION (Updated with QTY Column) ---
     const expenses = filteredTx.filter(t => t.type === 'expense');
     if (expenses.length > 0) {
       checkPageBreak(25);
@@ -281,35 +273,50 @@ export const Backup: React.FC = () => {
 
       catMap.forEach((txs, catName) => {
           checkPageBreak(30);
+          
+          // Calculate Subtotals (Amount & Quantity)
           const subtotal = txs.reduce((sum, t) => sum + t.amount, 0);
+          const totalQty = txs.reduce((sum, t) => sum + (Number((t as any).quantity) || 0), 0);
+          
+          // Find the unit for this category (if any)
+          const unitTx = txs.find(t => (t as any).unit);
+          const unitName = unitTx ? (unitTx as any).unit : '';
           
           doc.setFontSize(10);
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(20, 30, 40);
           doc.text(`Category: ${catName.toUpperCase()}`, marginLeft, currentY); 
           
-          // Subtotal aligned to right (Red)
+          // Format Subtotal Text (With Total QTY if exists)
+          let subtotalText = `Subtotal: $${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+          if (totalQty > 0) {
+              subtotalText = `Total Qty: ${totalQty} ${unitName.toUpperCase()}   |   ${subtotalText}`;
+          }
+
           doc.setTextColor(216, 31, 74); 
-          doc.text(`Subtotal: $${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, marginRight, currentY, { align: 'right' });
+          doc.text(subtotalText, marginRight, currentY, { align: 'right' });
           currentY += 3;
           
+          // Render Table Rows (Now 4 Columns)
           const rows = txs.map(t => [
               t.date,
               t.description.toUpperCase(),
+              (t as any).quantity ? `${(t as any).quantity} ${(t as any).unit || ''}`.toUpperCase() : '-',
               `$${t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
           ]);
 
           autoTable(doc, {
               startY: currentY,
-              head: [['DATE', 'ITEM DESCRIPTION', 'AMOUNT']], 
+              head: [['DATE', 'ITEM DESCRIPTION', 'QTY', 'AMOUNT']], 
               body: rows,
               theme: 'plain', 
-              headStyles: { fillColor: '#d81f4a', textColor: '#ffffff', fontStyle: 'bold', fontSize: 9 }, // Red Header
-              alternateRowStyles: { fillColor: '#fff1f2' }, // Very faint red alternating row
+              headStyles: { fillColor: '#d81f4a', textColor: '#ffffff', fontStyle: 'bold', fontSize: 9 }, 
+              alternateRowStyles: { fillColor: '#fff1f2' }, 
               styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: 0 },
               columnStyles: { 
-                  0: { cellWidth: 35 },
-                  2: { halign: 'right', cellWidth: 40 } 
+                  0: { cellWidth: 25 },
+                  2: { halign: 'center', cellWidth: 25 }, // Center align QTY
+                  3: { halign: 'right', cellWidth: 35 } 
               }
           });
           
@@ -318,7 +325,6 @@ export const Backup: React.FC = () => {
       });
     }
 
-    // Draw dynamically named watermark & footer
     drawWatermarkAndFooter(doc, projectName);
 
     doc.save(`Detailed_Ledger_${projectName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -371,7 +377,6 @@ export const Backup: React.FC = () => {
       </AnimatePresence>
 
       <div className="flex flex-col md:flex-row gap-8 items-stretch">
-        {/* PDF Export Node */}
         <div className="flex-1 bg-slate-800 rounded-[2rem] border border-slate-700 p-8 shadow-xl flex flex-col group">
           <div className="flex items-center space-x-4 mb-6">
              <div className="p-4 bg-amber-400/10 rounded-2xl"><Terminal className="text-amber-400" size={32} /></div>
@@ -381,14 +386,12 @@ export const Backup: React.FC = () => {
              </div>
           </div>
           
-          {/* --- FILTER SECTION --- */}
           <div className="w-full bg-slate-900/50 p-5 rounded-2xl border border-slate-700 mb-6 space-y-4">
             <div className="flex items-center text-amber-400 mb-2 space-x-2">
               <Filter size={16} />
               <span className="text-xs font-bold uppercase tracking-widest">Audit Filters</span>
             </div>
             
-            {/* Date Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
                 <label className="text-[10px] text-slate-500 uppercase font-bold pl-1">Start Date</label>
@@ -406,7 +409,6 @@ export const Backup: React.FC = () => {
               </div>
             </div>
 
-            {/* Type Filter */}
             <div className="w-full">
               <label className="text-[10px] text-blue-400 uppercase font-bold pl-1">Transaction Type</label>
               <select 
@@ -419,7 +421,6 @@ export const Backup: React.FC = () => {
               </select>
             </div>
 
-            {/* Deposit and Expense Detailed Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
                 <label className={`text-[10px] uppercase font-bold pl-1 ${transactionType === 'expense' ? 'text-slate-600' : 'text-emerald-500'}`}>Target Depositor</label>
@@ -448,9 +449,7 @@ export const Backup: React.FC = () => {
               </div>
             </div>
           </div>
-          {/* --- END OF FILTER SECTION --- */}
 
-          {/* --- EXPORT BUTTONS --- */}
           <div className="w-full space-y-3 mt-auto">
              <button onClick={handleLedgerPdfExport} className="w-full bg-amber-400 text-slate-900 font-black py-4 rounded-xl flex items-center justify-center space-x-2 hover:bg-amber-500 transition-all shadow-lg">
                 <List size={18} />
@@ -467,7 +466,6 @@ export const Backup: React.FC = () => {
           </div>
         </div>
 
-        {/* Disaster Recovery Node */}
         <div className="flex-1 bg-slate-800/50 border border-slate-700 rounded-[2rem] p-10 flex flex-col items-center text-center justify-center">
           <div className="p-5 bg-blue-400/10 rounded-[1.5rem] mb-6"><Database className="text-blue-400" size={40} /></div>
           <h3 className="text-2xl font-bold text-white mb-3">Disaster Recovery</h3>
